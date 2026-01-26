@@ -1,0 +1,13 @@
+[Unit]
+Description=Smart Ambulance Tracker
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/root/smart_ambulance_tracker
+Environment="PATH=/root/smart_ambulance_tracker/venv/bin"
+Environment="ORS_API_KEY=your_api_key_here"
+ExecStart=/root/smart_ambulance_tracker/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:5000 tracker_server:app
+
+[Install]
+WantedBy=multi-user.target
