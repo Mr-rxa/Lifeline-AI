@@ -3,11 +3,13 @@ Description=Smart Ambulance Tracker
 After=network.target
 
 [Service]
-User=root
-WorkingDirectory=/root/smart_ambulance_tracker
-Environment="PATH=/root/smart_ambulance_tracker/venv/bin"
-Environment="ORS_API_KEY=your_api_key_here"
-ExecStart=/root/smart_ambulance_tracker/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:5000 tracker_server:app
+User=azureuser
+WorkingDirectory=/home/azureuser/Lifeline-AI
+Environment="PATH=/home/azureuser/Lifeline-AI/venv/bin"
+Environment="ORS_API_KEY=YOUR_ACTUAL_ORS_KEY_HERE"
+ExecStart=/home/azureuser/Lifeline-AI/venv/bin/gunicorn --workers 2 --bind 0.0.0.0:5000 tracker_server:app
+Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
