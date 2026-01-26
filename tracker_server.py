@@ -56,9 +56,13 @@ def update_csv(aid, lat, lon, speed, ts, emergency='normal', status='active'):
 @app.route('/update_location', methods=['POST'])
 def update_location():
     try:
-        # Get raw data
-        raw_data = request.data.decode('utf-8')
+        # Safely get raw data
+        raw_data = request.get_data(as_text=True)
         print(f"Raw request: {raw_data}")
+        
+        if not raw_data:
+            return jsonify({'error': 'Empty request body', 'status': 'error'}), 400
+            
         data = json.loads(raw_data)
         
         aid = data.get('id', 'AMB-' + str(uuid.uuid4())[:8])
@@ -102,8 +106,11 @@ def update_location():
             'distance_km': round(min_dist, 2) if min_dist != float('inf') else 0,
             'eta_minutes': round((min_dist / 60) * 60, 1) if min_dist != float('inf') else 0
         }
-        print(f"Response: {resp}")
+        print(f"Success: {resp}")
         return jsonify(resp)
+    except json.JSONDecodeError as je:
+        print(f"JSON decode error: {str(je)}")
+        return jsonify({'error': f'Invalid JSON: {str(je)}', 'status': 'error'}), 400
     except Exception as e:
         print(f"Error: {str(e)}")
         print(traceback.format_exc())
