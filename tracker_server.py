@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify, render_template_string
 
 
 import csv, time, os, json, traceback, uuid
+import requests
 from datetime import datetime
 
 app = Flask(__name__)
@@ -15,6 +16,7 @@ ambulances = {}
 notifications_log = []
 hospitals_cache = []
 positions_log = {}  # per-ambulance recent path points
+WEBHOOK_URLS = [u.strip() for u in os.getenv('WEBHOOK_URLS', '').split(',') if u.strip()]
 
 # Create CSV file with header if missing
 if not os.path.exists(CSV_FILE):
@@ -92,9 +94,20 @@ def notify_hospitals(ambulance_id, lat, lon, speed, status):
             notifications_log.pop(0)
         
         print(f"🚑 ALERT: {ambulance_id} -> {nearest['name']} ({distance:.1f}km away)")
+        broadcast_webhooks(notification)
         return notification
     
     return None
+
+def broadcast_webhooks(notification):
+    """Send notification to configured webhook URLs (best effort)."""
+    if not WEBHOOK_URLS:
+        return
+    for url in WEBHOOK_URLS:
+        try:
+            requests.post(url, json=notification, timeout=2)
+        except Exception as e:
+            print(f"Webhook error to {url}: {e}")
 
 def update_csv(aid, lat, lon, speed, ts, emergency='normal', status='active'):
     cleanup_old_positions()  # Remove stale data
@@ -214,6 +227,35 @@ def get_notifications():
     """Get recent notifications"""
     limit = request.args.get('limit', 20, type=int)
     return jsonify(notifications_log[-limit:] if notifications_log else []), 200
+
+@app.route('/api/alerts/nearby', methods=['GET'])
+def get_alerts_nearby():
+  """Return ambulances within radius_km of given lat/lon for citizen alerts."""
+  try:
+    lat = float(request.args.get('lat'))
+    lon = float(request.args.get('lon'))
+    radius = float(request.args.get('radius_km', 2.0))
+  except Exception:
+    return jsonify({'error': 'lat, lon required'}), 400
+
+  results = []
+  for amb in ambulances.values():
+    try:
+      from utils import haversine
+      dist = haversine(lat, lon, amb['lat'], amb['lon'])
+      if dist <= radius:
+        eta_minutes = round((dist / max(amb.get('speed', 10) or 10, 10)) * 60, 1)
+        entry = dict(amb)
+        entry['distance_km'] = round(dist, 2)
+        entry['eta_minutes'] = eta_minutes
+        results.append(entry)
+    except Exception as e:
+      print(f"alerts_nearby error: {e}")
+      continue
+
+  # Sort closest first
+  results.sort(key=lambda x: x.get('distance_km', 0))
+  return jsonify({'count': len(results), 'radius_km': radius, 'ambulances': results}), 200
 
 @app.route('/api/hospitals/nearest', methods=['GET'])
 def get_nearest_hospital():
