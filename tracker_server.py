@@ -1,4 +1,9 @@
 from flask import Flask, request, jsonify, render_template_string
+
+
+
+
+
 import csv, time, os, json, traceback, uuid
 from datetime import datetime
 
@@ -9,6 +14,7 @@ CSV_FILE = 'live_positions.csv'
 ambulances = {}
 notifications_log = []
 hospitals_cache = []
+positions_log = {}  # per-ambulance recent path points
 
 # Create CSV file with header if missing
 if not os.path.exists(CSV_FILE):
@@ -144,6 +150,13 @@ def update_location():
             'emergency': emergency,
             'last_update': ts
         }
+
+        # Track recent path for each ambulance (last 50 points)
+        if aid not in positions_log:
+          positions_log[aid] = []
+        positions_log[aid].append({'lat': lat, 'lon': lon, 'ts': ts})
+        if len(positions_log[aid]) > 50:
+          positions_log[aid] = positions_log[aid][-50:]
         
         # Send hospital notification
         notification = notify_hospitals(aid, lat, lon, speed, status)
@@ -176,7 +189,8 @@ def update_location():
         return jsonify({
             'status': 'ok',
             'ambulance_id': aid,
-            'notification': notification
+            'notification': notification,
+            'path': positions_log.get(aid, [])
         }), 200
     
     except json.JSONDecodeError:
@@ -188,7 +202,12 @@ def update_location():
 @app.route('/api/ambulances', methods=['GET'])
 def get_ambulances():
     """Get all active ambulances"""
-    return jsonify(list(ambulances.values())), 200
+    enriched = []
+    for aid, data in ambulances.items():
+        item = dict(data)
+        item['path'] = positions_log.get(aid, [])
+        enriched.append(item)
+    return jsonify(enriched), 200
 
 @app.route('/api/notifications', methods=['GET'])
 def get_notifications():
@@ -217,7 +236,7 @@ def get_nearest_hospital():
 @app.route('/')
 @app.route('/ambulance')
 def serve_gps_sender():
-  return """
+    return """
     <!DOCTYPE html>
     <html>
     <head>
@@ -535,7 +554,13 @@ def serve_gps_sender():
           .then(data => {
             const time = new Date().toLocaleTimeString();
             showStatus(`✅ Location sent successfully at ${time}`, 'success');
-            showHospitalInfo(data);
+            if (data && data.notification) {
+              showHospitalInfo(data.notification);
+            } else if (data && data.nearest_hospital) {
+              showHospitalInfo(data);
+            } else {
+              showStatus('✅ Location updated, waiting for nearest hospital info...', 'warning');
+            }
           })
           .catch(err => {
             showStatus(`❌ Error: ${err.message}`, 'error');

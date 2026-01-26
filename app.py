@@ -118,21 +118,25 @@ def update_map(n, mode):
     route_name = ""
 
     if mode == 'live':
-        try:
-            with open('live_positions.csv', 'r') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    live_positions.append(row)
-        except FileNotFoundError:
-            pass
+        if ambulances:
+            # Prefer live API data
+            live_positions = ambulances
+        else:
+            try:
+                with open('live_positions.csv', 'r') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        live_positions.append(row)
+            except FileNotFoundError:
+                pass
 
-        # Sort by timestamp and keep latest per ambulance
-        live_positions.sort(key=lambda x: float(x.get('ts', 0)), reverse=True)
-        latest_positions = {}
-        for row in live_positions:
-            if row['id'] not in latest_positions:
-                latest_positions[row['id']] = row
-        live_positions = list(latest_positions.values())
+            # Sort by timestamp and keep latest per ambulance
+            live_positions.sort(key=lambda x: float(x.get('ts', 0)), reverse=True)
+            latest_positions = {}
+            for row in live_positions:
+                if row['id'] not in latest_positions:
+                    latest_positions[row['id']] = row
+            live_positions = list(latest_positions.values())
 
     else:
         if not SIM_ROUTE:
@@ -173,6 +177,7 @@ def update_map(n, mode):
             aid = pos['id']
             emergency = pos.get('emergency', 'normal')
             status = pos.get('status', 'active')
+            path = pos.get('path') or []
             
             # Set color based on emergency level
             if emergency == 'critical':
@@ -199,6 +204,20 @@ def update_map(n, mode):
                 name=f"{aid} ({emergency.upper()})",
                 hovertemplate=f"<b>{aid}</b><br>Emergency: {emergency}<br>Status: {status}<extra></extra>"
             ))
+
+            # Draw recent path for this ambulance if available
+            if path and len(path) > 1:
+                path_lats = [float(p.get('lat')) for p in path]
+                path_lons = [float(p.get('lon')) for p in path]
+                fig.add_trace(go.Scattermap(
+                    lat=path_lats, lon=path_lons,
+                    mode='lines',
+                    line=dict(width=2, color=color),
+                    name=f"Route {aid}",
+                    showlegend=False
+                ))
+                all_route_lats.extend(path_lats)
+                all_route_lons.extend(path_lons)
 
         if mode == 'sim' and route_lats:
             fig.add_trace(go.Scattermap(
