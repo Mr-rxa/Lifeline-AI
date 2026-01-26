@@ -120,12 +120,11 @@ def update_csv(aid, lat, lon, speed, ts, emergency='normal', status='active'):
 def update_location():
     """Update ambulance location and send hospital notifications"""
     try:
-        raw_data = request.get_data(as_text=True)
-        
-        if not raw_data:
-            return jsonify({'error': 'Empty request', 'status': 'error'}), 400
-            
-        data = json.loads(raw_data)
+        raw_body = request.get_data(as_text=True)
+        data = request.get_json(force=True, silent=True)
+        if not data:
+          print(f"Invalid JSON body: {raw_body}")
+          return jsonify({'error': 'Invalid JSON', 'body': raw_body, 'status': 'error'}), 400
         
         aid = data.get('id', 'AMB-' + str(uuid.uuid4())[:8])
         lat = float(data.get('lat', 28.6139))
