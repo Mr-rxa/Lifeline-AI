@@ -1,5 +1,5 @@
-from flask import Flask, request, jsonify, send_from_directory
-import csv, time, os, hashlib, uuid
+from flask import Flask, request, jsonify
+import csv, time, os, hashlib, uuid, json, traceback
 
 app = Flask(__name__)
 CSV_FILE = 'live_positions.csv'
@@ -56,12 +56,10 @@ def update_csv(aid, lat, lon, speed, ts, emergency='normal', status='active'):
 @app.route('/update_location', methods=['POST'])
 def update_location():
     try:
-        # Parse JSON safely
-        if request.is_json:
-            data = request.get_json()
-        else:
-            import json
-            data = json.loads(request.data.decode('utf-8'))
+        # Get raw data
+        raw_data = request.data.decode('utf-8')
+        print(f"Raw request: {raw_data}")
+        data = json.loads(raw_data)
         
         aid = data.get('id', 'AMB-' + str(uuid.uuid4())[:8])
         lat = float(data.get('lat', 28.6139))
@@ -77,10 +75,13 @@ def update_location():
         from utils import haversine
         
         hospitals_data = []
-        if os.path.exists('hospitals.csv'):
-            with open('hospitals.csv', 'r') as f:
-                reader = csv.DictReader(f)
-                hospitals_data = list(reader)
+        try:
+            if os.path.exists('hospitals.csv'):
+                with open('hospitals.csv', 'r') as f:
+                    reader = csv.DictReader(f)
+                    hospitals_data = list(reader)
+        except Exception as e:
+            print(f"Hospitals file error: {e}")
         
         min_dist = float('inf')
         nearest = None
@@ -91,19 +92,20 @@ def update_location():
                     min_dist = dist
                     nearest = hosp
             except:
-                continue
+                pass
         
-        return jsonify({
+        resp = {
             'status': 'ok', 
             'ts': ts,
             'ambulance_id': aid,
-            'nearest_hospital': nearest['name'] if nearest is not None else 'Unknown',
-            'distance_km': round(min_dist, 2) if nearest is not None else 0,
-            'eta_minutes': round((min_dist / 60) * 60, 1) if nearest is not None else 0
-        })
+            'nearest_hospital': nearest.get('name') if nearest else 'Unknown',
+            'distance_km': round(min_dist, 2) if min_dist != float('inf') else 0,
+            'eta_minutes': round((min_dist / 60) * 60, 1) if min_dist != float('inf') else 0
+        }
+        print(f"Response: {resp}")
+        return jsonify(resp)
     except Exception as e:
-        import traceback
-        print(f"Error in update_location: {str(e)}")
+        print(f"Error: {str(e)}")
         print(traceback.format_exc())
         return jsonify({'error': str(e), 'status': 'error'}), 400
 
