@@ -228,6 +228,32 @@ def get_notifications():
     limit = request.args.get('limit', 20, type=int)
     return jsonify(notifications_log[-limit:] if notifications_log else []), 200
 
+@app.route('/trigger_alert', methods=['POST'])
+def trigger_alert():
+  """Manually trigger notification for an ambulance by id."""
+  try:
+    data = request.get_json(force=True, silent=True) or {}
+    aid = data.get('id')
+    if not aid or aid not in ambulances:
+      return jsonify({'error': 'ambulance id not found', 'status': 'error'}), 404
+
+    amb = ambulances[aid]
+    notification = notify_hospitals(
+      aid,
+      amb.get('lat'),
+      amb.get('lon'),
+      amb.get('speed', 0),
+      amb.get('status', 'stationary')
+    )
+
+    return jsonify({
+      'status': 'ok',
+      'ambulance_id': aid,
+      'notification': notification
+    }), 200
+  except Exception as e:
+    return jsonify({'error': str(e), 'status': 'error'}), 400
+
 @app.route('/api/alerts/nearby', methods=['GET'])
 def get_alerts_nearby():
   """Return ambulances within radius_km of given lat/lon for citizen alerts."""
@@ -500,6 +526,7 @@ def serve_gps_sender():
               <button class="btn-urgent" onclick="setEmergency('urgent')">⚠️ URGENT</button>
               <button class="btn-normal" onclick="setEmergency('normal')">✅ NORMAL</button>
               <button class="btn-arrived" onclick="setStatus('arrived')">🏥 ARRIVED</button>
+              <button class="btn-normal" style="background:#007bff" onclick="triggerAlert()">📢 Notify Nearby</button>
             </div>
           </div>
           
@@ -606,6 +633,26 @@ def serve_gps_sender():
           })
           .catch(err => {
             showStatus(`❌ Error: ${err.message}`, 'error');
+          });
+        }
+
+        function triggerAlert() {
+          fetch(SERVER_URL + "/trigger_alert", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: deviceId })
+          })
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.notification) {
+              showStatus('📢 Alert sent to nearby hospitals', 'success');
+              showHospitalInfo(data.notification);
+            } else {
+              showStatus('⚠️ Alert sent, waiting for hospital response', 'warning');
+            }
+          })
+          .catch(err => {
+            showStatus(`❌ Alert error: ${err.message}`, 'error');
           });
         }
 
