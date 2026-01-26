@@ -21,6 +21,7 @@ SIM_INDEX = 0
 SIM_ROUTE_NAME = ""
 
 app = dash.Dash(__name__)
+server = app.server  # Expose server for gunicorn
 app.layout = html.Div([
     html.H2("🚑 LifeLine AI — Smart Ambulance Tracker"),
     dcc.Dropdown(
