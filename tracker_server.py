@@ -1,14 +1,32 @@
-from flask import Flask, request, jsonify
-import csv, time, os, hashlib, uuid, json, traceback
+from flask import Flask, request, jsonify, render_template_string
+import csv, time, os, json, traceback, uuid
+from datetime import datetime
 
 app = Flask(__name__)
 CSV_FILE = 'live_positions.csv'
+
+# In-memory storage for active ambulances and notifications
+ambulances = {}
+notifications_log = []
+hospitals_cache = []
 
 # Create CSV file with header if missing
 if not os.path.exists(CSV_FILE):
     with open(CSV_FILE, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['id', 'lat', 'lon', 'speed_kmph', 'ts', 'emergency', 'status'])
+
+def load_hospitals():
+    """Load hospitals from CSV"""
+    global hospitals_cache
+    try:
+        with open('hospitals.csv', 'r') as f:
+            reader = csv.DictReader(f)
+            hospitals_cache = list(reader)
+    except:
+        hospitals_cache = []
+
+load_hospitals()
 
 def cleanup_old_positions():
     """Remove positions older than 5 minutes (300 seconds)"""
@@ -26,6 +44,51 @@ def cleanup_old_positions():
             writer.writerows(rows)
     except Exception as e:
         print(f"Cleanup error: {str(e)}")
+
+def find_nearest_hospital(lat, lon):
+    """Find nearest hospital"""
+    if not hospitals_cache:
+        load_hospitals()
+    
+    min_dist = float('inf')
+    nearest = None
+    for hosp in hospitals_cache:
+        try:
+            from utils import haversine
+            dist = haversine(float(lat), float(lon), float(hosp['lat']), float(hosp['lon']))
+            if dist < min_dist:
+                min_dist = dist
+                nearest = hosp
+        except:
+            pass
+    
+    return nearest, min_dist
+
+def notify_hospitals(ambulance_id, lat, lon, speed, status):
+    """Create notification for nearby hospitals"""
+    nearest, distance = find_nearest_hospital(lat, lon)
+    
+    if nearest:
+        notification = {
+            'timestamp': datetime.now().isoformat(),
+            'ambulance_id': ambulance_id,
+            'location': f"{lat:.4f}, {lon:.4f}",
+            'speed_kmph': float(speed),
+            'status': status,
+            'nearest_hospital': nearest['name'],
+            'distance_km': round(distance, 2),
+            'eta_minutes': round((distance / 60) * 60, 1)
+        }
+        notifications_log.append(notification)
+        
+        # Keep only last 50 notifications
+        if len(notifications_log) > 50:
+            notifications_log.pop(0)
+        
+        print(f"🚑 ALERT: {ambulance_id} -> {nearest['name']} ({distance:.1f}km away)")
+        return notification
+    
+    return None
 
 def update_csv(aid, lat, lon, speed, ts, emergency='normal', status='active'):
     cleanup_old_positions()  # Remove stale data
@@ -55,13 +118,12 @@ def update_csv(aid, lat, lon, speed, ts, emergency='normal', status='active'):
 
 @app.route('/update_location', methods=['POST'])
 def update_location():
+    """Update ambulance location and send hospital notifications"""
     try:
-        # Safely get raw data
         raw_data = request.get_data(as_text=True)
-        print(f"Raw request: {raw_data}")
         
         if not raw_data:
-            return jsonify({'error': 'Empty request body', 'status': 'error'}), 400
+            return jsonify({'error': 'Empty request', 'status': 'error'}), 400
             
         data = json.loads(raw_data)
         
@@ -70,65 +132,93 @@ def update_location():
         lon = float(data.get('lon', 77.2090))
         speed = float(data.get('speed_kmph', 0))
         emergency = data.get('emergency', 'normal')
-        status = data.get('status', 'active')
+        status = 'in_transit' if speed > 5 else 'stationary'
         ts = time.time()
 
-        update_csv(aid, lat, lon, speed, ts, emergency, status)
-        
-        # Find nearest hospital
-        from utils import haversine
-        
-        hospitals_data = []
-        try:
-            if os.path.exists('hospitals.csv'):
-                with open('hospitals.csv', 'r') as f:
-                    reader = csv.DictReader(f)
-                    hospitals_data = list(reader)
-        except Exception as e:
-            print(f"Hospitals file error: {e}")
-        
-        min_dist = float('inf')
-        nearest = None
-        for hosp in hospitals_data:
-            try:
-                dist = haversine(float(lat), float(lon), float(hosp['lat']), float(hosp['lon']))
-                if dist < min_dist:
-                    min_dist = dist
-                    nearest = hosp
-            except:
-                pass
-        
-        resp = {
-            'status': 'ok', 
-            'ts': ts,
-            'ambulance_id': aid,
-            'nearest_hospital': nearest.get('name') if nearest else 'Unknown',
-            'distance_km': round(min_dist, 2) if min_dist != float('inf') else 0,
-            'eta_minutes': round((min_dist / 60) * 60, 1) if min_dist != float('inf') else 0
+        # Update ambulances dictionary
+        ambulances[aid] = {
+            'id': aid,
+            'lat': lat,
+            'lon': lon,
+            'speed': speed,
+            'status': status,
+            'emergency': emergency,
+            'last_update': ts
         }
-        print(f"Success: {resp}")
-        return jsonify(resp)
-    except json.JSONDecodeError as je:
-        print(f"JSON decode error: {str(je)}")
-        return jsonify({'error': f'Invalid JSON: {str(je)}', 'status': 'error'}), 400
+        
+        # Send hospital notification
+        notification = notify_hospitals(aid, lat, lon, speed, status)
+        
+        # Save to CSV
+        rows = []
+        if os.path.exists(CSV_FILE):
+            with open(CSV_FILE, 'r') as f:
+                reader = csv.DictReader(f)
+                rows = [r for r in reader if r.get('id') != aid]
+        
+        rows.append({
+            'id': aid,
+            'lat': str(lat),
+            'lon': str(lon),
+            'speed_kmph': str(speed),
+            'ts': str(ts),
+            'emergency': emergency,
+            'status': status
+        })
+        
+        if len(rows) > 50:
+            rows = rows[-50:]
+        
+        with open(CSV_FILE, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=['id', 'lat', 'lon', 'speed_kmph', 'ts', 'emergency', 'status'])
+            writer.writeheader()
+            writer.writerows(rows)
+        
+        return jsonify({
+            'status': 'ok',
+            'ambulance_id': aid,
+            'notification': notification
+        }), 200
+    
+    except json.JSONDecodeError:
+        return jsonify({'error': 'Invalid JSON', 'status': 'error'}), 400
     except Exception as e:
         print(f"Error: {str(e)}")
-        print(traceback.format_exc())
-        return jsonify({'error': str(e), 'status': 'error'}), 400
+        return jsonify({'error': str(e)}, {'status': 'error'}), 400
 
-@app.route('/positions', methods=['GET'])
-def positions():
-    rows = []
-    if os.path.exists(CSV_FILE):
-        with open(CSV_FILE, 'r') as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-    return jsonify(rows)
+@app.route('/api/ambulances', methods=['GET'])
+def get_ambulances():
+    """Get all active ambulances"""
+    return jsonify(list(ambulances.values())), 200
 
-# Serve GPS sender page directly
+@app.route('/api/notifications', methods=['GET'])
+def get_notifications():
+    """Get recent notifications"""
+    limit = request.args.get('limit', 20, type=int)
+    return jsonify(notifications_log[-limit:] if notifications_log else []), 200
+
+@app.route('/api/hospitals/nearest', methods=['GET'])
+def get_nearest_hospital():
+    """Get nearest hospital for coordinates"""
+    try:
+        lat = float(request.args.get('lat', 28.6139))
+        lon = float(request.args.get('lon', 77.2090))
+        
+        nearest, distance = find_nearest_hospital(lat, lon)
+        
+        return jsonify({
+            'hospital': nearest,
+            'distance_km': round(distance, 2),
+            'eta_minutes': round((distance / 60) * 60, 1)
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+# Serve GPS sender page at root and /ambulance for nginx proxy
 @app.route('/')
+@app.route('/ambulance')
 def serve_gps_sender():
-    return """
+  return """
     <!DOCTYPE html>
     <html>
     <head>

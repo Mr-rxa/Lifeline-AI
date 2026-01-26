@@ -23,18 +23,34 @@ SIM_ROUTE_NAME = ""
 app = dash.Dash(__name__)
 server = app.server  # Expose server for gunicorn
 app.layout = html.Div([
-    html.H2("🚑 LifeLine AI — Smart Ambulance Tracker"),
-    dcc.Dropdown(
-        id='mode',
-        options=[
-            {'label': 'Live GPS', 'value': 'live'},
-            {'label': 'Simulation', 'value': 'sim'}
-        ],
-        value='live',
-        style={'width': '300px'}
-    ),
-    dcc.Graph(id='live-map', style={'height': '80vh'}),
-    dcc.Interval(id='interval', interval=3000, n_intervals=0),
+    html.H2("🚑 LifeLine AI — Smart Ambulance Tracker", style={'color': '#f5576c', 'textAlign': 'center', 'padding': '20px'}),
+    
+    html.Div([
+        html.Div([
+            html.H4("Active Ambulances"),
+            html.Div(id='ambulance-list', style={'height': '300px', 'overflowY': 'auto', 'border': '1px solid #ddd', 'padding': '10px', 'borderRadius': '5px'})
+        ], style={'width': '32%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '2%'}),
+        
+        html.Div([
+            html.H4("Hospital Notifications"),
+            html.Div(id='notifications-list', style={'height': '300px', 'overflowY': 'auto', 'border': '1px solid #ddd', 'padding': '10px', 'borderRadius': '5px'})
+        ], style={'width': '32%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '2%'}),
+        
+        html.Div([
+            html.H4("Map Mode"),
+            dcc.Dropdown(
+                id='mode',
+                options=[
+                    {'label': 'Live Tracking', 'value': 'live'},
+                    {'label': 'Demo Simulation', 'value': 'sim'}
+                ],
+                value='live'
+            )
+        ], style={'width': '32%', 'display': 'inline-block', 'verticalAlign': 'top'})
+    ], style={'backgroundColor': '#f8f9fa', 'padding': '15px', 'borderRadius': '8px', 'marginBottom': '20px'}),
+    
+    dcc.Graph(id='live-map', style={'height': '70vh'}),
+    dcc.Interval(id='interval', interval=2000, n_intervals=0),
 ])
 
 def get_route(lat1, lon1, lat2, lon2):
@@ -71,12 +87,32 @@ def setup_simulation():
         SIM_ROUTE_NAME = "Unknown Hospital"
 
 @app.callback(
-    Output('live-map', 'figure'),
-    Input('interval', 'n_intervals'),
-    State('mode', 'value')
+    [Output('live-map', 'figure'),
+     Output('ambulance-list', 'children'),
+     Output('notifications-list', 'children')],
+    [Input('interval', 'n_intervals'),
+     Input('mode', 'value')]
 )
 def update_map(n, mode):
     global SIM_INDEX, SIM_ROUTE
+    
+    # Get ambulances and notifications from server
+    ambulances = []
+    notifications = []
+    try:
+        resp = requests.get('http://localhost:5000/api/ambulances', timeout=1)
+        if resp.status_code == 200:
+            ambulances = resp.json()
+    except:
+        pass
+    
+    try:
+        resp = requests.get('http://localhost:5000/api/notifications?limit=20', timeout=1)
+        if resp.status_code == 200:
+            notifications = resp.json()
+    except:
+        pass
+    
     live_positions = []
     route_lats, route_lons = [], []
     route_name = ""
@@ -156,10 +192,12 @@ def update_map(n, mode):
             
             fig.add_trace(go.Scattermap(
                 lat=[lat], lon=[lon],
-                mode='markers',
+                mode='markers+text',
                 marker=dict(size=size, color=color),
+                text=aid,
+                textposition='top center',
                 name=f"{aid} ({emergency.upper()})",
-                text=f"ID: {aid}<br>Status: {status}<br>Emergency: {emergency}"
+                hovertemplate=f"<b>{aid}</b><br>Emergency: {emergency}<br>Status: {status}<extra></extra>"
             ))
 
         if mode == 'sim' and route_lats:
@@ -222,9 +260,35 @@ def update_map(n, mode):
     fig.update_layout(
         map=dict(center=dict(lat=center_lat, lon=center_lon), zoom=zoom_level, style="open-street-map"),
         margin={"r": 0, "t": 0, "l": 0, "b": 0},
-        uirevision='constant'  # Preserve zoom/pan state when map updates
+        uirevision='constant',
+        hovermode='closest'
     )
-    return fig
+    
+    # Build ambulance list
+    amb_list = []
+    for amb in ambulances:
+        color = 'red' if amb.get('emergency') == 'critical' else 'orange' if amb.get('emergency') == 'urgent' else 'green'
+        amb_list.append(html.Div([
+            html.Div(f"🚑 {amb['id']}", style={'fontWeight': 'bold', 'color': color}),
+            html.Div(f"Speed: {amb.get('speed', 0):.1f} km/h", style={'fontSize': '12px'}),
+            html.Div(f"Status: {amb.get('status', 'unknown')}", style={'fontSize': '12px', 'color': '#666'}),
+        ], style={'padding': '10px', 'borderBottom': '1px solid #eee', 'marginBottom': '5px'}))
+    
+    if not amb_list:
+        amb_list = [html.Div("No active ambulances", style={'color': '#999', 'padding': '10px'})]
+    
+    # Build notifications list
+    notif_list = []
+    for notif in reversed(notifications[:15]):
+        notif_list.append(html.Div([
+            html.Div(f"🏥 {notif.get('nearest_hospital', 'Unknown')}", style={'fontWeight': 'bold', 'fontSize': '12px'}),
+            html.Div(f"{notif.get('ambulance_id')} → {notif.get('distance_km')} km, ETA: {notif.get('eta_minutes')} min", style={'fontSize': '11px', 'color': '#666'}),
+        ], style={'padding': '8px', 'borderBottom': '1px solid #eee', 'marginBottom': '5px'}))
+    
+    if not notif_list:
+        notif_list = [html.Div("No notifications yet", style={'color': '#999', 'padding': '10px'})]
+    
+    return fig, amb_list, notif_list
 
 if __name__ == '__main__':
     print("🚀 Starting Smart Ambulance Tracker...")
