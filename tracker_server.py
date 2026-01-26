@@ -56,18 +56,24 @@ def update_csv(aid, lat, lon, speed, ts, emergency='normal', status='active'):
 @app.route('/update_location', methods=['POST'])
 def update_location():
     try:
-        data = request.get_json(force=True)
+        # Parse JSON safely
+        if request.is_json:
+            data = request.get_json()
+        else:
+            import json
+            data = json.loads(request.data.decode('utf-8'))
+        
         aid = data.get('id', 'AMB-' + str(uuid.uuid4())[:8])
-        lat = float(data['lat'])
-        lon = float(data['lon'])
-        speed = data.get('speed_kmph', 0)
-        emergency = data.get('emergency', 'normal')  # normal, critical, urgent
-        status = data.get('status', 'active')  # active, offline, arrived
+        lat = float(data.get('lat', 28.6139))
+        lon = float(data.get('lon', 77.2090))
+        speed = float(data.get('speed_kmph', 0))
+        emergency = data.get('emergency', 'normal')
+        status = data.get('status', 'active')
         ts = time.time()
 
         update_csv(aid, lat, lon, speed, ts, emergency, status)
         
-        # Return nearest hospital info using haversine only (no pandas)
+        # Find nearest hospital
         from utils import haversine
         
         hospitals_data = []
@@ -96,8 +102,10 @@ def update_location():
             'eta_minutes': round((min_dist / 60) * 60, 1) if nearest is not None else 0
         })
     except Exception as e:
+        import traceback
         print(f"Error in update_location: {str(e)}")
-        return jsonify({'error': str(e), 'status': 'error'}), 500
+        print(traceback.format_exc())
+        return jsonify({'error': str(e), 'status': 'error'}), 400
 
 @app.route('/positions', methods=['GET'])
 def positions():
