@@ -12,17 +12,20 @@ if not os.path.exists(CSV_FILE):
 
 def cleanup_old_positions():
     """Remove positions older than 5 minutes (300 seconds)"""
-    current_time = time.time()
-    rows = []
-    if os.path.exists(CSV_FILE):
-        with open(CSV_FILE, 'r') as f:
-            reader = csv.DictReader(f)
-            rows = [r for r in reader if (current_time - float(r.get('ts', 0))) < 300]
-    
-    with open(CSV_FILE, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=['id', 'lat', 'lon', 'speed_kmph', 'ts', 'emergency', 'status'])
-        writer.writeheader()
-        writer.writerows(rows)
+    try:
+        current_time = time.time()
+        rows = []
+        if os.path.exists(CSV_FILE):
+            with open(CSV_FILE, 'r') as f:
+                reader = csv.DictReader(f)
+                rows = [r for r in reader if r.get('ts') and (current_time - float(r.get('ts', 0))) < 300]
+        
+        with open(CSV_FILE, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=['id', 'lat', 'lon', 'speed_kmph', 'ts', 'emergency', 'status'])
+            writer.writeheader()
+            writer.writerows(rows)
+    except Exception as e:
+        print(f"Cleanup error: {str(e)}")
 
 def update_csv(aid, lat, lon, speed, ts, emergency='normal', status='active'):
     cleanup_old_positions()  # Remove stale data
@@ -52,37 +55,49 @@ def update_csv(aid, lat, lon, speed, ts, emergency='normal', status='active'):
 
 @app.route('/update_location', methods=['POST'])
 def update_location():
-    data = request.get_json(force=True)
-    aid = data.get('id', 'AMB-' + str(uuid.uuid4())[:8])
-    lat = float(data['lat'])
-    lon = float(data['lon'])
-    speed = data.get('speed_kmph', 0)
-    emergency = data.get('emergency', 'normal')  # normal, critical, urgent
-    status = data.get('status', 'active')  # active, offline, arrived
-    ts = time.time()
+    try:
+        data = request.get_json(force=True)
+        aid = data.get('id', 'AMB-' + str(uuid.uuid4())[:8])
+        lat = float(data['lat'])
+        lon = float(data['lon'])
+        speed = data.get('speed_kmph', 0)
+        emergency = data.get('emergency', 'normal')  # normal, critical, urgent
+        status = data.get('status', 'active')  # active, offline, arrived
+        ts = time.time()
 
-    update_csv(aid, lat, lon, speed, ts, emergency, status)
-    
-    # Return nearest hospital info
-    from utils import haversine
-    import pandas as pd
-    hospitals_df = pd.read_csv('hospitals.csv')
-    min_dist = float('inf')
-    nearest = None
-    for _, hosp in hospitals_df.iterrows():
-        dist = haversine(lat, lon, hosp['lat'], hosp['lon'])
-        if dist < min_dist:
-            min_dist = dist
-            nearest = hosp
-    
-    return jsonify({
-        'status': 'ok', 
-        'ts': ts,
-        'ambulance_id': aid,
-        'nearest_hospital': nearest['name'] if nearest is not None else 'Unknown',
-        'distance_km': round(min_dist, 2) if nearest is not None else 0,
-        'eta_minutes': round((min_dist / 60) * 60, 1) if nearest is not None else 0  # Assuming avg 60 km/h
-    })
+        update_csv(aid, lat, lon, speed, ts, emergency, status)
+        
+        # Return nearest hospital info using haversine only (no pandas)
+        from utils import haversine
+        
+        hospitals_data = []
+        if os.path.exists('hospitals.csv'):
+            with open('hospitals.csv', 'r') as f:
+                reader = csv.DictReader(f)
+                hospitals_data = list(reader)
+        
+        min_dist = float('inf')
+        nearest = None
+        for hosp in hospitals_data:
+            try:
+                dist = haversine(float(lat), float(lon), float(hosp['lat']), float(hosp['lon']))
+                if dist < min_dist:
+                    min_dist = dist
+                    nearest = hosp
+            except:
+                continue
+        
+        return jsonify({
+            'status': 'ok', 
+            'ts': ts,
+            'ambulance_id': aid,
+            'nearest_hospital': nearest['name'] if nearest is not None else 'Unknown',
+            'distance_km': round(min_dist, 2) if nearest is not None else 0,
+            'eta_minutes': round((min_dist / 60) * 60, 1) if nearest is not None else 0
+        })
+    except Exception as e:
+        print(f"Error in update_location: {str(e)}")
+        return jsonify({'error': str(e), 'status': 'error'}), 500
 
 @app.route('/positions', methods=['GET'])
 def positions():
