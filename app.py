@@ -91,7 +91,7 @@ def update_map(n, mode):
             pass
 
         # Sort by timestamp and keep latest per ambulance
-        live_positions.sort(key=lambda x: float(x['ts']), reverse=True)
+        live_positions.sort(key=lambda x: float(x.get('ts', 0)), reverse=True)
         latest_positions = {}
         for row in live_positions:
             if row['id'] not in latest_positions:
@@ -135,11 +135,31 @@ def update_map(n, mode):
             lat = float(pos['lat'])
             lon = float(pos['lon'])
             aid = pos['id']
+            emergency = pos.get('emergency', 'normal')
+            status = pos.get('status', 'active')
+            
+            # Set color based on emergency level
+            if emergency == 'critical':
+                color = 'red'
+                size = 18
+            elif emergency == 'urgent':
+                color = 'orange'
+                size = 16
+            else:
+                color = 'blue'
+                size = 14
+            
+            # Skip if arrived
+            if status == 'arrived':
+                color = 'gray'
+                size = 12
+            
             fig.add_trace(go.Scattermap(
                 lat=[lat], lon=[lon],
                 mode='markers',
-                marker=dict(size=14, color='blue'),
-                name=f"Ambulance {aid}"
+                marker=dict(size=size, color=color),
+                name=f"{aid} ({emergency.upper()})",
+                text=f"ID: {aid}<br>Status: {status}<br>Emergency: {emergency}"
             ))
 
         if mode == 'sim' and route_lats:

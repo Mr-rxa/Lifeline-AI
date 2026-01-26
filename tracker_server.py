@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, send_from_directory
-import csv, time, os
+import csv, time, os, hashlib, uuid
 
 app = Flask(__name__)
 CSV_FILE = 'live_positions.csv'
@@ -8,9 +8,25 @@ CSV_FILE = 'live_positions.csv'
 if not os.path.exists(CSV_FILE):
     with open(CSV_FILE, 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(['id', 'lat', 'lon', 'speed_kmph', 'ts'])
+        writer.writerow(['id', 'lat', 'lon', 'speed_kmph', 'ts', 'emergency', 'status'])
 
-def update_csv(aid, lat, lon, speed, ts):
+def cleanup_old_positions():
+    """Remove positions older than 5 minutes (300 seconds)"""
+    current_time = time.time()
+    rows = []
+    if os.path.exists(CSV_FILE):
+        with open(CSV_FILE, 'r') as f:
+            reader = csv.DictReader(f)
+            rows = [r for r in reader if (current_time - float(r.get('ts', 0))) < 300]
+    
+    with open(CSV_FILE, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=['id', 'lat', 'lon', 'speed_kmph', 'ts', 'emergency', 'status'])
+        writer.writeheader()
+        writer.writerows(rows)
+
+def update_csv(aid, lat, lon, speed, ts, emergency='normal', status='active'):
+    cleanup_old_positions()  # Remove stale data
+    
     rows = []
     if os.path.exists(CSV_FILE):
         with open(CSV_FILE, 'r') as f:
@@ -24,25 +40,49 @@ def update_csv(aid, lat, lon, speed, ts):
         'lat': str(lat),
         'lon': str(lon),
         'speed_kmph': str(speed),
-        'ts': str(ts)
+        'ts': str(ts),
+        'emergency': emergency,
+        'status': status
     })
 
     with open(CSV_FILE, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=['id', 'lat', 'lon', 'speed_kmph', 'ts'])
+        writer = csv.DictWriter(f, fieldnames=['id', 'lat', 'lon', 'speed_kmph', 'ts', 'emergency', 'status'])
         writer.writeheader()
         writer.writerows(rows)
 
 @app.route('/update_location', methods=['POST'])
 def update_location():
     data = request.get_json(force=True)
-    aid = data.get('id', 'AMB')
+    aid = data.get('id', 'AMB-' + str(uuid.uuid4())[:8])
     lat = float(data['lat'])
     lon = float(data['lon'])
-    speed = data.get('speed_kmph', '')
+    speed = data.get('speed_kmph', 0)
+    emergency = data.get('emergency', 'normal')  # normal, critical, urgent
+    status = data.get('status', 'active')  # active, offline, arrived
     ts = time.time()
 
-    update_csv(aid, lat, lon, speed, ts)
-    return jsonify({'status': 'ok', 'ts': ts})
+    update_csv(aid, lat, lon, speed, ts, emergency, status)
+    
+    # Return nearest hospital info
+    from utils import haversine
+    import pandas as pd
+    hospitals_df = pd.read_csv('hospitals.csv')
+    min_dist = float('inf')
+    nearest = None
+    for _, hosp in hospitals_df.iterrows():
+        dist = haversine(lat, lon, hosp['lat'], hosp['lon'])
+        if dist < min_dist:
+            min_dist = dist
+            nearest = hosp
+    
+    return jsonify({
+        'status': 'ok', 
+        'ts': ts,
+        'ambulance_id': aid,
+        'nearest_hospital': nearest['name'] if nearest is not None else 'Unknown',
+        'distance_km': round(min_dist, 2) if nearest is not None else 0,
+        'eta_minutes': round((min_dist / 60) * 60, 1) if nearest is not None else 0  # Assuming avg 60 km/h
+    })
 
 @app.route('/positions', methods=['GET'])
 def positions():
@@ -60,84 +100,355 @@ def serve_gps_sender():
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Ambulance GPS Sender</title>
+      <title>🚑 LifeLine AI - Ambulance Tracker</title>
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; }
-        #status { color: green; margin-top: 10px; }
-        #error { color: red; margin-top: 10px; }
-        #coords { font-weight: bold; margin-top: 10px; background: #f0f0f0; padding: 10px; border-radius: 5px; }
-        input { padding: 8px; font-size: 16px; border: 2px solid #ddd; border-radius: 4px; }
-        .url-display { background: #e8f5e9; padding: 10px; margin: 10px 0; border-radius: 5px; word-break: break-all; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          min-height: 100vh;
+          padding: 20px;
+        }
+        .container { 
+          max-width: 500px; 
+          margin: 0 auto;
+          background: white;
+          border-radius: 20px;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+          overflow: hidden;
+        }
+        .header {
+          background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+          color: white;
+          padding: 30px 20px;
+          text-align: center;
+        }
+        .header h1 { font-size: 24px; margin-bottom: 5px; }
+        .header p { opacity: 0.9; font-size: 14px; }
+        
+        .content { padding: 20px; }
+        
+        .card {
+          background: #f8f9fa;
+          border-radius: 12px;
+          padding: 15px;
+          margin-bottom: 15px;
+        }
+        
+        .card h3 { 
+          font-size: 14px; 
+          color: #666; 
+          margin-bottom: 8px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        
+        .card-value {
+          font-size: 18px;
+          font-weight: bold;
+          color: #333;
+          word-break: break-all;
+        }
+        
+        .coords { 
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+        }
+        
+        .coord-item {
+          background: white;
+          padding: 12px;
+          border-radius: 8px;
+          text-align: center;
+        }
+        
+        .coord-label {
+          font-size: 11px;
+          color: #999;
+          text-transform: uppercase;
+        }
+        
+        .coord-value {
+          font-size: 16px;
+          font-weight: bold;
+          color: #333;
+          margin-top: 5px;
+        }
+        
+        .status {
+          padding: 12px;
+          border-radius: 8px;
+          margin-bottom: 15px;
+          font-weight: 500;
+          text-align: center;
+        }
+        
+        .status.success {
+          background: #d4edda;
+          color: #155724;
+          border: 2px solid #c3e6cb;
+        }
+        
+        .status.error {
+          background: #f8d7da;
+          color: #721c24;
+          border: 2px solid #f5c6cb;
+        }
+        
+        .status.warning {
+          background: #fff3cd;
+          color: #856404;
+          border: 2px solid #ffeaa7;
+        }
+        
+        .emergency-buttons {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+          margin-bottom: 15px;
+        }
+        
+        button {
+          padding: 15px;
+          border: none;
+          border-radius: 10px;
+          font-size: 16px;
+          font-weight: bold;
+          cursor: pointer;
+          transition: all 0.3s;
+        }
+        
+        button:active {
+          transform: scale(0.95);
+        }
+        
+        .btn-critical {
+          background: #dc3545;
+          color: white;
+        }
+        
+        .btn-urgent {
+          background: #ffc107;
+          color: #333;
+        }
+        
+        .btn-normal {
+          background: #28a745;
+          color: white;
+        }
+        
+        .btn-arrived {
+          background: #6c757d;
+          color: white;
+        }
+        
+        .pulse {
+          animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+        
+        .info-box {
+          background: #e3f2fd;
+          padding: 15px;
+          border-radius: 10px;
+          border-left: 4px solid #2196f3;
+          margin-top: 15px;
+        }
+        
+        .info-box h4 {
+          color: #1976d2;
+          margin-bottom: 8px;
+          font-size: 14px;
+        }
+        
+        .info-box p {
+          color: #555;
+          font-size: 13px;
+          line-height: 1.6;
+        }
       </style>
     </head>
     <body>
-      <h2>🚑 GPS Sender</h2>
-      <div class="url-display">
-        <strong>Server URL:</strong> <span id="currentUrl"></span>
+      <div class="container">
+        <div class="header">
+          <h1>🚑 LifeLine AI</h1>
+          <p>Real-Time Ambulance Tracking System</p>
+        </div>
+        
+        <div class="content">
+          <div class="card">
+            <h3>🆔 Device ID</h3>
+            <div class="card-value" id="deviceId">Initializing...</div>
+          </div>
+          
+          <div class="card">
+            <h3>📍 Live Location</h3>
+            <div class="coords">
+              <div class="coord-item">
+                <div class="coord-label">Latitude</div>
+                <div class="coord-value" id="lat">--</div>
+              </div>
+              <div class="coord-item">
+                <div class="coord-label">Longitude</div>
+                <div class="coord-value" id="lon">--</div>
+              </div>
+              <div class="coord-item">
+                <div class="coord-label">Speed</div>
+                <div class="coord-value" id="speed">-- km/h</div>
+              </div>
+              <div class="coord-item">
+                <div class="coord-label">Accuracy</div>
+                <div class="coord-value" id="accuracy">-- m</div>
+              </div>
+            </div>
+          </div>
+          
+          <div id="statusBox"></div>
+          
+          <div class="card">
+            <h3>🚨 Emergency Level</h3>
+            <div class="emergency-buttons">
+              <button class="btn-critical" onclick="setEmergency('critical')">🚨 CRITICAL</button>
+              <button class="btn-urgent" onclick="setEmergency('urgent')">⚠️ URGENT</button>
+              <button class="btn-normal" onclick="setEmergency('normal')">✅ NORMAL</button>
+              <button class="btn-arrived" onclick="setStatus('arrived')">🏥 ARRIVED</button>
+            </div>
+          </div>
+          
+          <div id="hospitalInfo"></div>
+        </div>
       </div>
-      <p>Sending live GPS location to the tracker server...</p>
-
-      <label for="ambId">Ambulance ID: </label>
-      <input type="text" id="ambId" value="AMB1" style="padding: 5px; margin-bottom: 10px;">
-
-      <div id="coords">Waiting for GPS...</div>
-      <div id="status"></div>
-      <div id="error"></div>
 
       <script>
-        const NGROK_URL = window.location.origin;
-        document.getElementById("currentUrl").innerText = NGROK_URL;
-
-        function getAmbulanceId() {
-          return document.getElementById("ambId").value || "AMB1";
+        const SERVER_URL = window.location.origin;
+        let currentEmergency = 'normal';
+        let currentStatus = 'active';
+        let deviceId = null;
+        
+        // Generate unique device ID based on browser fingerprint
+        function generateDeviceId() {
+          const nav = navigator;
+          const screen = window.screen;
+          const fingerprint = [
+            nav.userAgent,
+            nav.language,
+            screen.colorDepth,
+            screen.width + 'x' + screen.height,
+            new Date().getTimezoneOffset(),
+            !!window.sessionStorage,
+            !!window.localStorage
+          ].join('|');
+          
+          // Simple hash function
+          let hash = 0;
+          for (let i = 0; i < fingerprint.length; i++) {
+            const char = fingerprint.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+          }
+          
+          const storedId = localStorage.getItem('ambulance_device_id');
+          if (storedId) {
+            return storedId;
+          }
+          
+          const newId = 'AMB-' + Math.abs(hash).toString(36).toUpperCase().substring(0, 8);
+          localStorage.setItem('ambulance_device_id', newId);
+          return newId;
+        }
+        
+        deviceId = generateDeviceId();
+        document.getElementById('deviceId').innerText = deviceId;
+        
+        function setEmergency(level) {
+          currentEmergency = level;
+          showStatus(`Emergency level set to: ${level.toUpperCase()}`, 'warning');
+        }
+        
+        function setStatus(status) {
+          currentStatus = status;
+          if (status === 'arrived') {
+            showStatus('✅ Marked as ARRIVED at hospital', 'success');
+          }
+        }
+        
+        function showStatus(message, type = 'success') {
+          const box = document.getElementById('statusBox');
+          box.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+        
+        function showHospitalInfo(data) {
+          const info = document.getElementById('hospitalInfo');
+          info.innerHTML = `
+            <div class="info-box">
+              <h4>🏥 Nearest Hospital</h4>
+              <p><strong>${data.nearest_hospital}</strong></p>
+              <p>📏 Distance: ${data.distance_km} km</p>
+              <p>⏱️ ETA: ${data.eta_minutes} minutes</p>
+            </div>
+          `;
         }
 
-        function sendLocation(lat, lon, speed) {
-          const AMBULANCE_ID = getAmbulanceId();
-          const payload = { id: AMBULANCE_ID, lat: lat, lon: lon, speed_kmph: speed || 0 };
+        function sendLocation(lat, lon, speed, accuracy) {
+          const payload = { 
+            id: deviceId,
+            lat: lat, 
+            lon: lon, 
+            speed_kmph: speed || 0,
+            emergency: currentEmergency,
+            status: currentStatus
+          };
 
-          fetch(NGROK_URL + "/update_location", {
+          fetch(SERVER_URL + "/update_location", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
           })
           .then(res => res.json())
           .then(data => {
-            document.getElementById("status").innerText = "✅ Sent at " + new Date().toLocaleTimeString();
-            console.log("Server response:", data);
+            const time = new Date().toLocaleTimeString();
+            showStatus(`✅ Location sent successfully at ${time}`, 'success');
+            showHospitalInfo(data);
           })
           .catch(err => {
-            document.getElementById("error").innerText = "❌ Send error: " + err;
+            showStatus(`❌ Error: ${err.message}`, 'error');
           });
         }
 
         function success(pos) {
-          const lat = pos.coords.latitude;
-          const lon = pos.coords.longitude;
+          const lat = pos.coords.latitude.toFixed(6);
+          const lon = pos.coords.longitude.toFixed(6);
           const speed = pos.coords.speed ? (pos.coords.speed * 3.6).toFixed(1) : 0;
+          const accuracy = pos.coords.accuracy ? pos.coords.accuracy.toFixed(0) : 'N/A';
 
-          document.getElementById("coords").innerText = `📍 Lat: ${lat}, Lon: ${lon}, Speed: ${speed} km/h`;
-          sendLocation(lat, lon, speed);
+          document.getElementById('lat').innerText = lat;
+          document.getElementById('lon').innerText = lon;
+          document.getElementById('speed').innerText = speed;
+          document.getElementById('accuracy').innerText = accuracy;
+          
+          sendLocation(lat, lon, speed, accuracy);
         }
 
         function error(err) {
-          document.getElementById("error").innerText = "⚠ GPS error: " + err.message;
+          showStatus(`⚠️ GPS Error: ${err.message}`, 'error');
           console.warn("GPS error:", err);
-
-          // fallback to Delhi
-          const fallbackLat = 28.6139;
-          const fallbackLon = 77.2090;
-          sendLocation(fallbackLat, fallbackLon, 0);
         }
 
         if ("geolocation" in navigator) {
+          showStatus('🔄 Acquiring GPS location...', 'warning');
           navigator.geolocation.watchPosition(success, error, {
             enableHighAccuracy: true,
-            maximumAge: 0
+            maximumAge: 0,
+            timeout: 10000
           });
         } else {
-          document.getElementById("error").innerText = "❌ Geolocation not supported in this browser.";
+          showStatus('❌ Geolocation not supported', 'error');
         }
       </script>
     </body>
