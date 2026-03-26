@@ -8,7 +8,7 @@ import requests
 from utils import haversine
 
 # ==== CONFIG ====
-ORS_API_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjIzNzYyNThjYzMxNzQ3NTA5NGUyYzc1YjVjNmFjZjMyIiwiaCI6Im11cm11cjY0In0="  # Replace with your key
+ORS_API_KEY = ""  # Replace with your key
 # =================
 
 # Load hospital data
