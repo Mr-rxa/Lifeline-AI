@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LifeLine AI - Emergency</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { overflow-y: auto; background-color: var(--bg-color); }
+        .citizen-topbar {
+            height: 60px;
+            background: var(--card-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 15px;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            font-weight: 700;
+            font-size: 18px;
+            color: var(--danger-color);
+        }
+        .container {
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+            padding-bottom: 50px;
+        }
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: var(--glass-shadow);
+        }
+        .sos-btn {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            background: linear-gradient(145deg, #ef4444, #dc2626);
+            color: white;
+            font-size: 32px;
+            font-weight: 800;
+            border: 8px solid rgba(239, 68, 68, 0.3);
+            box-shadow: 0 10px 30px rgba(239, 68, 68, 0.4);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 30px auto;
+            transition: transform 0.2s, box-shadow 0.2s;
+            animation: pulse 2s infinite;
+        }
+        .sos-btn:active {
+            transform: scale(0.95);
+            box-shadow: 0 5px 15px rgba(239, 68, 68, 0.4);
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 5px; color: var(--text-color); }
+        .map-container { height: 300px; border-radius: 12px; overflow: hidden; margin-top: 20px; border: 1px solid var(--border-color); }
+        
+        .status-tracker {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+            position: relative;
+        }
+        .status-tracker::before {
+            content: '';
+            position: absolute;
+            top: 15px;
+            left: 10%;
+            right: 10%;
+            height: 4px;
+            background: var(--border-color);
+            z-index: 0;
+            border-radius: 2px;
+        }
+        .status-step {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 25%;
+        }
+        .step-circle {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: var(--card-bg);
+            border: 4px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .step-label {
+            margin-top: 8px;
+            font-size: 11px;
+            font-weight: 600;
+            text-align: center;
+            color: #64748b;
+        }
+        .status-step.active .step-circle {
+            border-color: var(--primary-color);
+            background: var(--primary-color);
+            color: white;
+        }
+        .status-step.active .step-label { color: var(--primary-color); }
+        .status-step.completed .step-circle {
+            border-color: var(--secondary-color);
+            background: var(--secondary-color);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+
+<header class="citizen-topbar">
+    🚨 LifeLine AI Emergency
+</header>
+
+<div class="container" id="request-screen">
+    <div class="card" style="text-align: center;">
+        <h2 style="margin-bottom: 10px;">Request Emergency Help</h2>
+        <p style="color: #64748b; font-size: 14px;">Tap the SOS button to share your location and request an ambulance immediately.</p>
+        
+        <button class="sos-btn" onclick="submitEmergency()">SOS</button>
+        
+        <div id="location-status" style="font-size: 13px; color: var(--warning-color); font-weight: 600; margin-top: 10px;">
+            Fetching GPS Location...
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Additional Details (Optional)</h3>
+        <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Providing details helps AI dispatch the right resources.</p>
+        
+        <div class="form-group">
+            <label>Patient Name</label>
+            <input type="text" id="patient-name" class="form-control" placeholder="E.g. John Doe">
+        </div>
+        <div class="form-group">
+            <label>Phone Number</label>
+            <input type="tel" id="patient-phone" class="form-control" placeholder="To contact you">
+        </div>
+        <div class="form-group">
+            <label>Emergency Type</label>
+            <select id="patient-type" class="form-control">
+                <option value="Accident">Accident</option>
+                <option value="Cardiac Emergency">Cardiac Emergency</option>
+                <option value="Trauma">Trauma</option>
+                <option value="Fire Injury">Fire Injury</option>
+                <option value="Stroke">Stroke</option>
+                <option value="Other">Other</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<div class="container" id="tracking-screen" style="display: none;">
+    <div class="card">
+        <h2 style="color: var(--danger-color); text-align: center; margin-bottom: 5px;">Help is Arranged</h2>
+        <p style="text-align: center; color: #64748b; font-size: 14px;" id="incident-id-display">Incident #</p>
+        
+        <div class="status-tracker">
+            <div class="status-step" id="step-pending">
+                <div class="step-circle">1</div>
+                <div class="step-label">Finding<br>Ambulance</div>
+            </div>
+            <div class="status-step" id="step-assigned">
+                <div class="step-circle">2</div>
+                <div class="step-label">Dispatched</div>
+            </div>
+            <div class="status-step" id="step-en_route_pickup">
+                <div class="step-circle">3</div>
+                <div class="step-label">On The<br>Way</div>
+            </div>
+            <div class="status-step" id="step-arrived_pickup">
+                <div class="step-circle">4</div>
+                <div class="step-label">Arrived</div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 30px; padding: 15px; background: rgba(59, 130, 246, 0.1); border-radius: 8px; border-left: 4px solid var(--primary-color);">
+            <div style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Assigned Hospital</div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-color); margin-top: 2px;" id="hospital-name">Assigning...</div>
+        </div>
+
+        <div class="map-container" id="citizenMap"></div>
+    </div>
+</div>
+
+<script src="/static/js/citizen.js"></script>
+</body>
+</html>

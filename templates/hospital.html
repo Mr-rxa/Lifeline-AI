@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LifeLine AI - Hospital Portal</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .queue-container {
+            display: flex;
+            gap: 20px;
+            overflow-x: auto;
+            padding-bottom: 20px;
+        }
+        .patient-card {
+            min-width: 300px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: var(--glass-shadow);
+            border-top: 4px solid var(--danger-color);
+        }
+        .patient-card.arrived {
+            border-top-color: var(--secondary-color);
+        }
+    </style>
+</head>
+<body>
+
+<div id="authContainer" class="auth-overlay">
+    <div class="card" style="max-width: 400px; margin: 0 auto; text-align: center;">
+        <h2>🏥 Hospital Login</h2>
+        <p style="color:#6b7280; margin-bottom: 20px;">Access ER Queue & Resources</p>
+        
+        <input type="text" id="auth-user" class="form-control" placeholder="Hospital Admin Username">
+        <input type="password" id="auth-pass" class="form-control" placeholder="Password">
+        <button class="btn btn-primary" onclick="loginHospital()" style="width: 100%; margin-top:15px; padding: 15px;">Login to Portal</button>
+        <p id="auth-err" style="color:var(--danger-color); text-align:center; margin-top:10px; display:none;"></p>
+    </div>
+</div>
+
+<div class="app-container" id="app-container" style="display:none; flex-direction: column;">
+    <header class="topbar">
+        <h2>🏥 ER Command - <span id="hospital-name-display">Loading...</span></h2>
+        <div>
+            <button class="btn btn-secondary" onclick="logoutHospital()">Logout</button>
+        </div>
+    </header>
+
+    <main class="dashboard-content active" style="flex: 1; padding: 30px;">
+        
+        <!-- Resource Management -->
+        <h3 style="margin-bottom: 15px;">Live Capacity</h3>
+        <div class="stats-grid" id="capacity-grid">
+            <div class="stat-card">
+                <h3>Available ER Beds</h3>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div class="value" id="val-beds">--</div>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="btn btn-secondary" style="padding: 5px 10px;" onclick="updateCapacity('beds', 1)">+</button>
+                        <button class="btn btn-danger" style="padding: 5px 10px;" onclick="updateCapacity('beds', -1)">-</button>
+                    </div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <h3>Available ICU Beds</h3>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div class="value" id="val-icu">--</div>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="btn btn-secondary" style="padding: 5px 10px;" onclick="updateCapacity('icu', 1)">+</button>
+                        <button class="btn btn-danger" style="padding: 5px 10px;" onclick="updateCapacity('icu', -1)">-</button>
+                    </div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <h3>Ventilators</h3>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div class="value" id="val-vents">--</div>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="btn btn-secondary" style="padding: 5px 10px;" onclick="updateCapacity('vents', 1)">+</button>
+                        <button class="btn btn-danger" style="padding: 5px 10px;" onclick="updateCapacity('vents', -1)">-</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h3 style="margin-bottom: 15px; margin-top: 30px; display:flex; justify-content:space-between;">
+            Incoming Patients
+            <span class="badge pending">Live Sync</span>
+        </h3>
+        
+        <div class="queue-container" id="incoming-queue">
+            <!-- Patient Cards dynamically populated -->
+        </div>
+
+    </main>
+</div>
+
+<script src="/static/js/hospital.js"></script>
+</body>
+</html>

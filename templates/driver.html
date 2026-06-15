@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- Mobile viewport scaling crucial for PWA -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LifeLine AI - Driver</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        /* Mobile overrides and specifics */
+        body {
+            overflow-y: auto;
+            -webkit-font-smoothing: antialiased;
+        }
+        .driver-topbar {
+            height: 60px;
+            background: var(--card-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 15px;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+        .online-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--secondary-color);
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+        .offline-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger-color);
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+        .driver-content {
+            padding: 15px;
+            padding-bottom: 100px;
+        }
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: var(--glass-shadow);
+        }
+        .card-header {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #6b7280;
+            margin-bottom: 15px;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+        .btn-large {
+            width: 100%;
+            padding: 18px;
+            font-size: 16px;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            text-align: center;
+            display: block;
+        }
+        .btn-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        
+        /* Auth Screen */
+        .auth-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-color);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .value-text {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-color);
+            margin-bottom: 5px;
+        }
+        .label-text {
+            font-size: 13px;
+            color: #6b7280;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Login Screen for Driver -->
+<div id="driverAuth" class="auth-overlay">
+    <div class="card" style="margin-top: -50px;">
+        <h2 style="text-align:center; margin-bottom: 5px;">LifeLine AI</h2>
+        <p style="text-align:center; color:#6b7280; margin-bottom: 20px;">Driver Authentication</p>
+        
+        <input type="text" id="auth-user" class="form-control" placeholder="Driver Username">
+        <input type="password" id="auth-pass" class="form-control" placeholder="Password">
+        <button class="btn btn-primary btn-large" onclick="loginDriver()" style="margin-top:15px;">Login to Terminal</button>
+        <p id="auth-err" style="color:var(--danger-color); text-align:center; margin-top:10px; display:none;"></p>
+    </div>
+</div>
+
+<!-- Main Driver Interface -->
+<div id="driverMain" style="display:none;">
+    <header class="driver-topbar">
+        <div style="font-weight: 700; font-size: 18px;">🚑 Terminal</div>
+        <div id="connectionStatus" class="online-badge"><div class="status-dot"></div> Online</div>
+    </header>
+
+    <div class="driver-content">
+        <!-- Profile Card -->
+        <div class="card">
+            <div class="card-header">Driver Profile</div>
+            <div class="value-text" id="driver-name">Loading...</div>
+            <div class="label-text">Logged In User</div>
+            
+            <div class="value-text" id="amb-id">Unassigned</div>
+            <div class="label-text">Ambulance Vehicle #</div>
+            
+            <button id="toggleShiftBtn" class="btn btn-success btn-large" onclick="toggleShift()">Start Shift (Start GPS)</button>
+            <p id="gps-status" style="font-size:12px; color:#6b7280; text-align:center; margin-top:10px;">GPS Inactive</p>
+        </div>
+
+        <!-- Assignment Card -->
+        <div class="card" id="assignmentCard" style="display:none;">
+            <div class="card-header" style="color:var(--primary-color);">Active Assignment: <span id="inc-id"></span></div>
+            
+            <div class="value-text" id="pat-name">--</div>
+            <div class="label-text">Patient Name</div>
+            
+            <div class="value-text" id="pat-phone">--</div>
+            <div class="label-text">Patient Contact</div>
+            
+            <div class="value-text" id="pat-notes">--</div>
+            <div class="label-text" style="color:var(--danger-color);">Condition Details</div>
+            
+            <div class="value-text" id="dest-hosp">--</div>
+            <div class="label-text">Destination Hospital</div>
+
+            <div id="driverMap" style="height: 200px; width: 100%; border-radius: 12px; margin-bottom: 20px; border: 1px solid var(--border-color); display: none;"></div>
+
+            <hr style="border:0; border-top:1px solid var(--border-color); margin: 20px 0;">
+            
+            <div class="card-header">Status Transitions</div>
+            <div class="btn-grid" style="margin-bottom:10px;">
+                <button class="btn btn-secondary" onclick="updateIncident('en_route_pickup')">En Route (Pickup)</button>
+                <button class="btn btn-primary" onclick="updateIncident('arrived_pickup')">Arrived (Pickup)</button>
+            </div>
+            <div class="btn-grid" style="margin-bottom:10px;">
+                <button class="btn btn-secondary" onclick="updateIncident('en_route_hospital')">En Route (Hosp)</button>
+                <button class="btn btn-primary" onclick="updateIncident('arrived_hospital')">Arrived (Hosp)</button>
+            </div>
+            <button class="btn btn-success btn-large" onclick="updateIncident('completed')" style="margin-bottom:0;">Mark Completed</button>
+
+            <hr style="border:0; border-top:1px solid var(--border-color); margin: 20px 0;">
+            
+            <div class="card-header">Emergency Severity Override</div>
+            <div class="btn-grid">
+                <button class="btn btn-secondary" style="background:#2ecc71;" onclick="updateSeverity('normal')">Normal</button>
+                <button class="btn btn-secondary" style="background:#f39c12;" onclick="updateSeverity('urgent')">Urgent</button>
+                <button class="btn btn-danger" style="grid-column: span 2;" onclick="updateSeverity('critical')">Critical!</button>
+            </div>
+        </div>
+
+        <div class="card" id="noAssignmentCard">
+            <div style="text-align:center; padding: 30px 10px;">
+                <div style="font-size:48px; margin-bottom:10px;">☕</div>
+                <div style="font-size:18px; font-weight:600; margin-bottom:5px;">No Active Assignment</div>
+                <div style="color:#6b7280; font-size:14px;">Waiting for dispatcher to assign an emergency request to your ambulance...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/driver.js"></script>
+</body>
+</html>
