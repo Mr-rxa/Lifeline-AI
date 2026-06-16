@@ -1,8 +1,27 @@
 import csv
+import os
 import random
+import secrets
 from datetime import datetime, timedelta
 from extensions import db, bcrypt
 from models import Hospital, User, Ambulance, Incident
+
+_GENERATED_SEED_PASSWORDS = {}
+
+def _seed_password(env_name, label):
+    configured = os.environ.get(env_name)
+    if configured:
+        return configured
+
+    if env_name not in _GENERATED_SEED_PASSWORDS:
+        password = secrets.token_urlsafe(12)
+        _GENERATED_SEED_PASSWORDS[env_name] = password
+        print(f"{label} seed password generated for this local database: {password}")
+
+    return _GENERATED_SEED_PASSWORDS[env_name]
+
+def _seed_password_hash(env_name, label):
+    return bcrypt.generate_password_hash(_seed_password(env_name, label)).decode('utf-8')
 
 def init_hospitals():
     if Hospital.query.first():
@@ -49,7 +68,7 @@ def init_fleet_and_demo_data():
         driver = User(
             username=f'driver{i}',
             email=f'driver{i}@lifeline.ai',
-            password_hash=bcrypt.generate_password_hash('driver123').decode('utf-8'),
+            password_hash=_seed_password_hash('SEED_DRIVER_PASSWORD', 'Driver'),
             role='driver'
         )
         db.session.add(driver)
@@ -119,7 +138,7 @@ def init_admin():
     admin = User(
         username='admin',
         email='admin@lifeline.ai',
-        password_hash=bcrypt.generate_password_hash('admin123').decode('utf-8'),
+        password_hash=_seed_password_hash('SEED_ADMIN_PASSWORD', 'Admin'),
         role='admin'
     )
     db.session.add(admin)
@@ -127,7 +146,7 @@ def init_admin():
     dispatch = User(
         username='dispatcher',
         email='disp@lifeline.ai',
-        password_hash=bcrypt.generate_password_hash('admin123').decode('utf-8'),
+        password_hash=_seed_password_hash('SEED_DISPATCHER_PASSWORD', 'Dispatcher'),
         role='dispatcher'
     )
     db.session.add(dispatch)

@@ -1,13 +1,13 @@
 [Unit]
-Description=Smart Ambulance Tracker
+Description=LifeLine AI Flask App
 After=network.target
 
 [Service]
 User=azureuser
 WorkingDirectory=/home/azureuser/Lifeline-AI
 Environment="PATH=/home/azureuser/Lifeline-AI/venv/bin"
-Environment="ORS_API_KEY=YOUR_ACTUAL_ORS_KEY_HERE"
-ExecStart=/home/azureuser/Lifeline-AI/venv/bin/gunicorn --workers 2 --bind 0.0.0.0:5000 tracker_server:app
+EnvironmentFile=-/etc/lifeline-ai.env
+ExecStart=/home/azureuser/Lifeline-AI/venv/bin/gunicorn --workers 2 --bind 0.0.0.0:5000 "app:create_app()"
 Restart=always
 RestartSec=10
 

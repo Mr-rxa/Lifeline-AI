@@ -1,9 +1,16 @@
-from app import create_app
-from extensions import db
+import os
 import requests
+import secrets
 import time
 import subprocess
 import threading
+from app import create_app
+from extensions import db
+
+ADMIN_PASSWORD = secrets.token_urlsafe(12)
+DRIVER_PASSWORD = secrets.token_urlsafe(12)
+os.environ['SEED_ADMIN_PASSWORD'] = ADMIN_PASSWORD
+os.environ['SEED_DRIVER_PASSWORD'] = DRIVER_PASSWORD
 
 app = create_app()
 
@@ -20,12 +27,12 @@ BASE_URL = 'http://localhost:5001/api'
 try:
     # We already have admin from previous test if DB persists? Wait, DB might be persistent.
     # Let's register a new driver
-    res = requests.post(f'{BASE_URL}/auth/register', json={'username':'driver1', 'email':'d1@ll.ai', 'password':'pass'})
+    res = requests.post(f'{BASE_URL}/auth/register', json={'username':'driver1', 'email':'d1@ll.ai', 'password': DRIVER_PASSWORD})
     if res.status_code == 400: # Already exists
         pass
     
     # Login as admin to add ambulance
-    admin_token = requests.post(f'{BASE_URL}/auth/login', json={'username':'admin', 'password':'pass'}).json().get('access_token')
+    admin_token = requests.post(f'{BASE_URL}/auth/login', json={'username':'admin', 'password': ADMIN_PASSWORD}).json().get('access_token')
     
     if admin_token:
         headers = {'Authorization': f'Bearer {admin_token}'}
@@ -50,7 +57,7 @@ try:
         requests.post(f'{BASE_URL}/ambulances/{amb_id}/assign', json={'driver_id': driver_id}, headers=headers)
         
         # Login as driver
-        driver_token = requests.post(f'{BASE_URL}/auth/login', json={'username':'driver1', 'password':'pass'}).json()['access_token']
+        driver_token = requests.post(f'{BASE_URL}/auth/login', json={'username':'driver1', 'password': DRIVER_PASSWORD}).json()['access_token']
         d_headers = {'Authorization': f'Bearer {driver_token}'}
         
         # Test location ping (driver.js does this)

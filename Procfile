@@ -1,1 +1,1 @@
-web: python tracker_server.py
+web: gunicorn "app:create_app()"

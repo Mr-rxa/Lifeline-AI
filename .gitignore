@@ -1,5 +1,31 @@
+# Local environment and secrets
 .env
+.env.*
+!.env.example
+
+# Python environments and caches
 venv/
+.venv/
+env/
 __pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Local databases and app state
 *.db
+*.sqlite
+*.sqlite3
 instance/
+
+# Test, coverage, and tooling output
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs and local OS/editor files
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
