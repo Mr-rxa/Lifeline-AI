@@ -1,9 +1,14 @@
-from app import create_app
-from extensions import db
+import os
 import requests
+import secrets
 import time
 import subprocess
 import threading
+from app import create_app
+from extensions import db
+
+ADMIN_PASSWORD = secrets.token_urlsafe(12)
+os.environ['SEED_ADMIN_PASSWORD'] = ADMIN_PASSWORD
 
 app = create_app()
 
@@ -19,8 +24,8 @@ BASE_URL = 'http://localhost:5000/api'
 
 try:
     # 1. Setup Admin
-    requests.post(f'{BASE_URL}/auth/setup/complete', json={'username':'admin', 'email':'admin@lifeline.ai', 'password':'pass'})
-    token = requests.post(f'{BASE_URL}/auth/login', json={'username':'admin', 'password':'pass'}).json()['access_token']
+    requests.post(f'{BASE_URL}/auth/setup/complete', json={'username':'admin', 'email':'admin@lifeline.ai', 'password': ADMIN_PASSWORD})
+    token = requests.post(f'{BASE_URL}/auth/login', json={'username':'admin', 'password': ADMIN_PASSWORD}).json()['access_token']
     headers = {'Authorization': f'Bearer {token}'}
 
     # 2. Add Ambulance

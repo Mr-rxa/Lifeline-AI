@@ -7,6 +7,7 @@ This resets the database to a clean, deterministic demo dataset.
 """
 
 import random
+import secrets
 from datetime import timedelta
 
 from app.core.config import settings
@@ -69,6 +70,23 @@ ADDRESSES = [
     "Nehru Place", "Hauz Khas", "Rajouri Garden", "Preet Vihar", "Greater Kailash",
 ]
 
+_GENERATED_SEED_PASSWORDS = {}
+
+
+def seed_password(env_name):
+    value = getattr(settings, env_name, "")
+    if value:
+        return value
+    if env_name not in _GENERATED_SEED_PASSWORDS:
+        _GENERATED_SEED_PASSWORDS[env_name] = secrets.token_urlsafe(12)
+    return _GENERATED_SEED_PASSWORDS[env_name]
+
+
+def password_note(env_name):
+    if getattr(settings, env_name, ""):
+        return f"configured via {env_name}"
+    return f"generated for this seed run: {_GENERATED_SEED_PASSWORDS[env_name]}"
+
 
 def rand_point(spread=0.06):
     return DELHI_CENTER[0] + random.uniform(-spread, spread), DELHI_CENTER[1] + random.uniform(-spread, spread)
@@ -84,6 +102,12 @@ def run():
     print("Resetting database...")
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+
+    admin_password = seed_password("SEED_ADMIN_PASSWORD")
+    dispatcher_password = seed_password("SEED_DISPATCHER_PASSWORD")
+    driver_password = seed_password("SEED_DRIVER_PASSWORD")
+    hospital_password = seed_password("SEED_HOSPITAL_PASSWORD")
+    citizen_password = seed_password("SEED_CITIZEN_PASSWORD")
 
     db = SessionLocal()
     try:
@@ -114,27 +138,27 @@ def run():
 
         # ---- Core staff ----
         admin = User(full_name="System Administrator", email=settings.SEED_ADMIN_EMAIL,
-                     phone="+91-9000000000", password_hash=hash_password(settings.SEED_ADMIN_PASSWORD),
+                     phone="+91-9000000000", password_hash=hash_password(admin_password),
                      role="admin")
         dispatcher = User(full_name="Control Room Dispatcher", email="dispatcher@lifeline.ai",
-                          phone="+91-9000000001", password_hash=hash_password("dispatch123"),
+                          phone="+91-9000000001", password_hash=hash_password(dispatcher_password),
                           role="dispatcher")
         citizen = User(full_name="Rahul Sharma", email="citizen@lifeline.ai", phone="+91-9810000000",
-                       password_hash=hash_password("citizen123"), role="citizen")
+                       password_hash=hash_password(citizen_password), role="citizen")
         db.add_all([admin, dispatcher, citizen])
         db.flush()
 
         # Hospital operators for the first 5 hospitals.
         for i in range(5):
             db.add(User(full_name=f"{hospitals[i].name} Operator", email=f"hospital{i + 1}@lifeline.ai",
-                        phone=f"+91-981100000{i}", password_hash=hash_password("hospital123"),
+                        phone=f"+91-981100000{i}", password_hash=hash_password(hospital_password),
                         role="hospital", hospital_id=hospitals[i].id))
 
         # ---- Drivers + ambulances ----
         ambulances = []
         for i in range(12):
             driver = User(full_name=f"Driver {i + 1}", email=f"driver{i + 1}@lifeline.ai",
-                          phone=f"+91-982200000{i}", password_hash=hash_password("driver123"), role="driver")
+                          phone=f"+91-982200000{i}", password_hash=hash_password(driver_password), role="driver")
             db.add(driver)
             db.flush()
             lat, lon = rand_point()
@@ -203,11 +227,11 @@ def run():
         print(f"Seed complete: {len(hospitals)} hospitals, {len(ambulances)} ambulances, "
               f"{completed} historical + 4 pending incidents.")
         print("\nLogin credentials:")
-        print(f"  Admin       {settings.SEED_ADMIN_EMAIL} / {settings.SEED_ADMIN_PASSWORD}")
-        print("  Dispatcher  dispatcher@lifeline.ai / dispatch123")
-        print("  Driver      driver1@lifeline.ai / driver123")
-        print("  Hospital    hospital1@lifeline.ai / hospital123")
-        print("  Citizen     citizen@lifeline.ai / citizen123")
+        print(f"  Admin       {settings.SEED_ADMIN_EMAIL} / {password_note('SEED_ADMIN_PASSWORD')}")
+        print(f"  Dispatcher  dispatcher@lifeline.ai / {password_note('SEED_DISPATCHER_PASSWORD')}")
+        print(f"  Driver      driver1@lifeline.ai / {password_note('SEED_DRIVER_PASSWORD')}")
+        print(f"  Hospital    hospital1@lifeline.ai / {password_note('SEED_HOSPITAL_PASSWORD')}")
+        print(f"  Citizen     citizen@lifeline.ai / {password_note('SEED_CITIZEN_PASSWORD')}")
     finally:
         db.close()
 
