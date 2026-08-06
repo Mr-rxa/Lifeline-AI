@@ -1,4 +1,7 @@
 import os
+import time
+import uuid
+from datetime import datetime
 import dash
 from dash import dcc, html
 from dash.dependencies import Output, Input, State
@@ -6,25 +9,277 @@ import plotly.graph_objs as go
 import pandas as pd
 import csv
 import requests
+from flask import request, jsonify
 from utils import haversine
 
 # ==== CONFIG ====
 ORS_API_KEY = os.getenv("ORS_API_KEY", "")
 # =================
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CSV_FILE = os.path.join(BASE_DIR, 'live_positions.csv')
+
 # Load hospital data
-hospitals_df = pd.read_csv('hospitals.csv')
+hospitals_df = pd.read_csv(os.path.join(BASE_DIR, 'hospitals.csv'))
+
+# Ambulance state
+ambulances_store = {}
+notifications_log = []
+positions_log = {}
+WEBHOOK_URLS = [u.strip() for u in os.getenv('WEBHOOK_URLS', '').split(',') if u.strip()]
+
+if not os.path.exists(CSV_FILE):
+    with open(CSV_FILE, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['id', 'lat', 'lon', 'speed_kmph', 'ts', 'emergency', 'status'])
+
+
+def load_hospitals():
+    try:
+        hospitals_df = pd.read_csv(os.path.join(BASE_DIR, 'hospitals.csv'))
+        return hospitals_df
+    except Exception:
+        return pd.DataFrame(columns=['name', 'lat', 'lon'])
+
+
+def cleanup_old_positions():
+    try:
+        current_time = time.time()
+        rows = []
+        if os.path.exists(CSV_FILE):
+            with open(CSV_FILE, 'r') as f:
+                reader = csv.DictReader(f)
+                rows = [r for r in reader if r.get('ts') and (current_time - float(r.get('ts', 0))) < 300]
+
+        with open(CSV_FILE, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=['id', 'lat', 'lon', 'speed_kmph', 'ts', 'emergency', 'status'])
+            writer.writeheader()
+            writer.writerows(rows)
+    except Exception:
+        pass
+
+
+def find_nearest_hospital(lat, lon):
+    if hospitals_df.empty:
+        hospitals_df = load_hospitals()
+
+    min_dist = float('inf')
+    nearest = None
+    for _, hosp in hospitals_df.iterrows():
+        try:
+            dist = haversine(float(lat), float(lon), float(hosp['lat']), float(hosp['lon']))
+            if dist < min_dist:
+                min_dist = dist
+                nearest = hosp
+        except Exception:
+            pass
+
+    return nearest, min_dist
+
+
+def notify_hospitals(ambulance_id, lat, lon, speed, status):
+    nearest, distance = find_nearest_hospital(lat, lon)
+    if nearest is None:
+        return None
+
+    notification = {
+        'timestamp': datetime.now().isoformat(),
+        'ambulance_id': ambulance_id,
+        'location': f"{lat:.4f}, {lon:.4f}",
+        'speed_kmph': float(speed),
+        'status': status,
+        'nearest_hospital': nearest['name'],
+        'distance_km': round(distance, 2),
+        'eta_minutes': round((distance / 60) * 60, 1)
+    }
+    notifications_log.append(notification)
+    if len(notifications_log) > 50:
+        notifications_log.pop(0)
+
+    return notification
+
+
+def update_csv(aid, lat, lon, speed, ts, emergency='normal', status='active'):
+    cleanup_old_positions()
+    rows = []
+    if os.path.exists(CSV_FILE):
+        with open(CSV_FILE, 'r') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+    rows = [r for r in rows if r.get('id') != aid]
+    rows.append({
+        'id': aid,
+        'lat': str(lat),
+        'lon': str(lon),
+        'speed_kmph': str(speed),
+        'ts': str(ts),
+        'emergency': emergency,
+        'status': status
+    })
+
+    with open(CSV_FILE, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=['id', 'lat', 'lon', 'speed_kmph', 'ts', 'emergency', 'status'])
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+# Dash app + WSGI entrypoint for hosting platforms
+# Create this before the Flask route decorators so the routes register correctly.
+dash_app = dash.Dash(__name__)
+server = dash_app.server
+app = server
+application = app
+
+
+@server.route('/ambulance')
+def ambulance_interface():
+    return """
+    <!DOCTYPE html>
+    <html lang=\"en\">
+    <head>
+      <meta charset=\"UTF-8\" />
+      <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+      <title>LifeLine AI — Ambulance Interface</title>
+      <style>
+        body { font-family: Inter, sans-serif; margin: 0; background: linear-gradient(135deg, #07111f, #132a4d); color: white; min-height: 100vh; display: grid; place-items: center; }
+        .card { width: min(92vw, 560px); background: rgba(8, 15, 30, 0.92); border: 1px solid rgba(255,255,255,0.12); border-radius: 24px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.35); }
+        h1 { margin-top: 0; font-size: 1.6rem; }
+        label { display: block; margin: 10px 0 6px; color: #8db7ff; }
+        input, select, button { width: 100%; padding: 12px 13px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.08); color: white; margin-bottom: 10px; }
+        button { cursor: pointer; background: linear-gradient(90deg, #4fd1c5, #5b8cff); color: #03111d; font-weight: 700; border: none; }
+        .status { margin-top: 10px; padding: 12px; border-radius: 12px; background: rgba(79, 209, 197, 0.15); }
+      </style>
+    </head>
+    <body>
+      <div class=\"card\">
+        <h1>🚑 Ambulance Dispatch</h1>
+        <p>Share live location updates for the control room.</p>
+        <label>Ambulance ID</label>
+        <input id=\"id\" value=\"AMB-01\" />
+        <label>Latitude</label>
+        <input id=\"lat\" type=\"number\" step=\"0.0001\" />
+        <label>Longitude</label>
+        <input id=\"lon\" type=\"number\" step=\"0.0001\" />
+        <label>Emergency Level</label>
+        <select id=\"emergency\">
+          <option value=\"normal\">Normal</option>
+          <option value=\"urgent\">Urgent</option>
+          <option value=\"critical\">Critical</option>
+        </select>
+        <button onclick=\"sendLocation()\">Send live update</button>
+        <div id=\"status\" class=\"status\">Waiting for a signal…</div>
+      </div>
+      <script>
+        const idInput = document.getElementById('id');
+        const latInput = document.getElementById('lat');
+        const lonInput = document.getElementById('lon');
+        const statusEl = document.getElementById('status');
+
+        function setLocationFromBrowser() {
+          if (!navigator.geolocation) {
+            statusEl.textContent = 'Location access is not supported on this device.';
+            return;
+          }
+          navigator.geolocation.getCurrentPosition((pos) => {
+            latInput.value = pos.coords.latitude.toFixed(6);
+            lonInput.value = pos.coords.longitude.toFixed(6);
+            statusEl.textContent = 'Live coordinates captured.';
+          }, () => {
+            latInput.value = '28.6139';
+            lonInput.value = '77.2090';
+            statusEl.textContent = 'Using fallback coordinates.';
+          });
+        }
+
+        async function sendLocation() {
+          const payload = {
+            id: idInput.value || 'AMB-01',
+            lat: Number(latInput.value || 28.6139),
+            lon: Number(lonInput.value || 77.2090),
+            speed_kmph: 42,
+            emergency: document.getElementById('emergency').value
+          };
+          statusEl.textContent = 'Sending update...';
+          const response = await fetch('/update_location', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await response.json();
+          statusEl.textContent = data.status === 'ok' ? 'Update sent successfully.' : 'Update failed.';
+        }
+
+        setLocationFromBrowser();
+      </script>
+    </body>
+    </html>
+    """
+
+
+@server.route('/update_location', methods=['POST'])
+def update_location():
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        aid = data.get('id', 'AMB-' + str(uuid.uuid4())[:8])
+        lat = float(data.get('lat', 28.6139))
+        lon = float(data.get('lon', 77.2090))
+        speed = float(data.get('speed_kmph', 0))
+        emergency = data.get('emergency', 'normal')
+        status = 'in_transit' if speed > 5 else 'stationary'
+        ts = time.time()
+
+        ambulances_store[aid] = {
+            'id': aid,
+            'lat': lat,
+            'lon': lon,
+            'speed': speed,
+            'status': status,
+            'emergency': emergency,
+            'last_update': ts
+        }
+        positions_log.setdefault(aid, []).append({'lat': lat, 'lon': lon, 'ts': ts})
+        if len(positions_log[aid]) > 50:
+            positions_log[aid] = positions_log[aid][-50:]
+
+        notification = notify_hospitals(aid, lat, lon, speed, status)
+        update_csv(aid, lat, lon, speed, ts, emergency, status)
+        return jsonify({'status': 'ok', 'ambulance_id': aid, 'notification': notification, 'path': positions_log.get(aid, [])}), 200
+    except Exception as e:
+        return jsonify({'error': str(e), 'status': 'error'}), 400
+
+
+@server.route('/api/ambulances', methods=['GET'])
+def api_ambulances():
+    enriched = []
+    for aid, data in ambulances_store.items():
+        item = dict(data)
+        item['path'] = positions_log.get(aid, [])
+        enriched.append(item)
+    return jsonify(enriched), 200
+
+
+@server.route('/api/notifications', methods=['GET'])
+def api_notifications():
+    limit = request.args.get('limit', 20, type=int)
+    return jsonify(notifications_log[-limit:] if notifications_log else []), 200
+
+
+@server.route('/trigger_alert', methods=['POST'])
+def trigger_alert():
+    data = request.get_json(force=True, silent=True) or {}
+    aid = data.get('id')
+    if not aid or aid not in ambulances_store:
+        return jsonify({'error': 'ambulance id not found', 'status': 'error'}), 404
+    amb = ambulances_store[aid]
+    notification = notify_hospitals(aid, amb.get('lat', 0), amb.get('lon', 0), amb.get('speed', 0), amb.get('status', 'stationary'))
+    return jsonify({'status': 'ok', 'ambulance_id': aid, 'notification': notification}), 200
 
 # Simulation globals
 SIM_START = (28.6139, 77.2090)
 SIM_ROUTE = []
 SIM_INDEX = 0
 SIM_ROUTE_NAME = ""
-
-dash_app = dash.Dash(__name__)
-server = dash_app.server  # Expose server for gunicorn
-app = server  # WSGI entrypoint for hosting platforms like gunicorn
-application = app
 
 dash_app.layout = html.Div([
     html.H2("🚑 LifeLine AI — Smart Ambulance Tracker", style={'color': '#f5576c', 'textAlign': 'center', 'padding': '20px'}),
@@ -103,22 +358,18 @@ def setup_simulation():
 def update_map(n, mode):
     global SIM_INDEX, SIM_ROUTE
     
-    # Get ambulances and notifications from server
+    # Get ambulances and notifications from the shared server state
     ambulances = []
     notifications = []
     try:
-        resp = requests.get('http://localhost:5000/api/ambulances', timeout=1)
-        if resp.status_code == 200:
-            ambulances = resp.json()
-    except:
-        pass
-    
+        ambulances = [dict(item) for item in ambulances_store.values()]
+    except Exception:
+        ambulances = []
+
     try:
-        resp = requests.get('http://localhost:5000/api/notifications?limit=20', timeout=1)
-        if resp.status_code == 200:
-            notifications = resp.json()
-    except:
-        pass
+        notifications = notifications_log[-20:] if notifications_log else []
+    except Exception:
+        notifications = []
     
     live_positions = []
     route_lats, route_lons = [], []
