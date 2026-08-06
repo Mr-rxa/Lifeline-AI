@@ -18,11 +18,32 @@ def test_health_endpoint():
 
 
 def test_dashboard_callback_renders():
-    figure, amb_list, notif_list = app.update_map(0, 'live')
+    figure, amb_list, notif_list, siren_zone = app.update_map(0, 'live')
     assert figure is not None
     assert len(figure.data) >= 1
     assert isinstance(amb_list, list)
     assert isinstance(notif_list, list)
+    assert siren_zone is not None
+
+
+def test_shared_route_endpoint():
+    client = app.app.test_client()
+    response = client.get('/api/route')
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert 'hospital' in payload or 'destination' in payload
+
+
+def test_siren_endpoint():
+    client = app.app.test_client()
+    response = client.post('/api/siren', json={'id': 'AMB-TEST'})
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['status'] == 'ok'
+    # confirm route reflects siren state
+    r = client.get('/api/route')
+    rp = r.get_json()
+    assert rp.get('siren_active') is True
 
 
 def test_ambulance_route():

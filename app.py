@@ -1,3 +1,4 @@
+import json
 import os
 import time
 import uuid
@@ -27,6 +28,16 @@ hospitals_df = pd.read_csv(os.path.join(BASE_DIR, 'hospitals.csv'))
 ambulances_store = {}
 notifications_log = []
 positions_log = {}
+shared_route_state = {
+    'active_ambulance': None,
+    'destination': None,
+    'route': [],
+    'siren_active': False,
+    'last_update': None,
+    'siren_expires': None,
+}
+# Current shared incident state (None or dict)
+current_incident = None
 WEBHOOK_URLS = [u.strip() for u in os.getenv('WEBHOOK_URLS', '').split(',') if u.strip()]
 
 if not os.path.exists(CSV_FILE):
@@ -147,6 +158,39 @@ def dashboard_redirect():
 server.static_folder = os.path.join(BASE_DIR, 'static')
 
 
+def parse_update_payload():
+    payload = request.get_json(silent=True)
+    if isinstance(payload, dict):
+        return payload
+
+    if request.form:
+        return request.form.to_dict()
+
+    raw_body = request.get_data(as_text=True)
+    if raw_body:
+        try:
+            parsed = json.loads(raw_body)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+
+    return {}
+
+
+def build_shared_route(lat, lon, ambulance_id):
+    nearest, distance = find_nearest_hospital(lat, lon)
+    destination = nearest['name'] if nearest is not None else 'Nearest hospital'
+    shared_route_state['active_ambulance'] = ambulance_id
+    shared_route_state['destination'] = destination
+    shared_route_state['route'] = [
+        {'lat': lat, 'lon': lon},
+        {'lat': float(nearest['lat']), 'lon': float(nearest['lon'])} if nearest is not None else {'lat': lat, 'lon': lon}
+    ]
+    shared_route_state['last_update'] = datetime.now().isoformat()
+    return destination, distance
+
+
 @server.route('/ambulance')
 def ambulance_interface():
     return """
@@ -193,8 +237,38 @@ def ambulance_interface():
         const latInput = document.getElementById('lat');
         const lonInput = document.getElementById('lon');
         const statusEl = document.getElementById('status');
+        const routeStatusEl = document.getElementById('shared-route');
         const sirenAudio = document.getElementById('siren-audio');
         let sirenEnabled = false;
+        let audioContext = null;
+
+        function ensureAudioContext() {
+          if (!audioContext) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            audioContext = AudioCtx ? new AudioCtx() : null;
+          }
+          if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume().catch(() => {});
+          }
+        }
+
+        function playFallbackSiren() {
+          ensureAudioContext();
+          if (!audioContext) return;
+          const oscillator = audioContext.createOscillator();
+          const gain = audioContext.createGain();
+          oscillator.type = 'square';
+          oscillator.frequency.setValueAtTime(900, audioContext.currentTime);
+          oscillator.frequency.linearRampToValueAtTime(1200, audioContext.currentTime + 0.2);
+          oscillator.frequency.linearRampToValueAtTime(900, audioContext.currentTime + 0.4);
+          gain.gain.setValueAtTime(0.001, audioContext.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.05, audioContext.currentTime + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.4);
+          oscillator.connect(gain);
+          gain.connect(audioContext.destination);
+          oscillator.start();
+          oscillator.stop(audioContext.currentTime + 0.4);
+        }
 
         function fillFromCoordinates(latitude, longitude) {
           latInput.value = latitude.toFixed(6);
@@ -226,36 +300,67 @@ def ambulance_interface():
             emergency: document.getElementById('emergency').value
           };
           statusEl.textContent = 'Sending update...';
-          const response = await fetch('/update_location', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          const data = await response.json();
-          statusEl.textContent = data.status === 'ok' ? 'Update sent successfully.' : 'Update failed.';
-          if (data.status === 'ok' && payload.emergency !== 'normal') {
-            triggerSiren();
+          try {
+            const response = await fetch('/update_location', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            statusEl.textContent = data.status === 'ok' ? 'Update sent successfully.' : 'Update failed.';
+            if (data.status === 'ok' && payload.emergency !== 'normal') {
+              triggerSiren();
+            }
+          } catch (error) {
+            statusEl.textContent = 'Update failed. The backend may be unavailable.';
           }
         }
 
         function enableSiren() {
           if (sirenEnabled) return;
           sirenEnabled = true;
-          sirenAudio.play().catch(() => {});
+          ensureAudioContext();
+          sirenAudio.play().catch(() => {
+            playFallbackSiren();
+          });
         }
 
-        function triggerSiren() {
+        async function triggerSiren() {
           enableSiren();
           sirenAudio.currentTime = 0;
           sirenAudio.play().catch(() => {
-            statusEl.textContent = 'Siren ready; press again if the browser blocks autoplay.';
+            playFallbackSiren();
+            statusEl.textContent = 'Siren ready; the device will play a fallback tone if autoplay is blocked.';
           });
           statusEl.textContent = '🚨 Loud siren activated';
+          try {
+            await fetch('/api/siren', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: idInput.value || 'AMB-01' })
+            });
+          } catch (error) {
+            // ignored
+          }
+        }
+
+        async function refreshSharedRoute() {
+          try {
+            const response = await fetch('/api/route');
+            const data = await response.json();
+            const destination = data.destination || 'Awaiting route';
+            const sirenState = data.siren_active ? ' • SIREN ACTIVE' : '';
+            routeStatusEl.textContent = `Route: ${destination}${sirenState}`;
+          } catch (error) {
+            routeStatusEl.textContent = 'Shared route unavailable.';
+          }
         }
 
         window.addEventListener('pointerdown', enableSiren, { once: true });
         window.addEventListener('keydown', enableSiren, { once: true });
         setLocationFromBrowser();
+        refreshSharedRoute();
+        setInterval(refreshSharedRoute, 2000);
         triggerSiren();
       </script>
     </body>
@@ -266,12 +371,25 @@ def ambulance_interface():
 @server.route('/update_location', methods=['POST'])
 def update_location():
     try:
-        data = request.get_json(force=True, silent=True) or {}
-        aid = data.get('id', 'AMB-' + str(uuid.uuid4())[:8])
-        lat = float(data.get('lat', 28.6139))
-        lon = float(data.get('lon', 77.2090))
-        speed = float(data.get('speed_kmph', 0))
-        emergency = data.get('emergency', 'normal')
+        data = parse_update_payload()
+        aid = str(data.get('id') or data.get('ambulance_id') or ('AMB-' + str(uuid.uuid4())[:8])).strip()
+
+        try:
+            lat = float(data.get('lat', 28.6139))
+        except (TypeError, ValueError):
+            lat = 28.6139
+
+        try:
+            lon = float(data.get('lon', 77.2090))
+        except (TypeError, ValueError):
+            lon = 77.2090
+
+        try:
+            speed = float(data.get('speed_kmph', 0))
+        except (TypeError, ValueError):
+            speed = 0
+
+        emergency = str(data.get('emergency') or 'normal')
         status = 'in_transit' if speed > 5 else 'stationary'
         ts = time.time()
 
@@ -290,9 +408,33 @@ def update_location():
 
         notification = notify_hospitals(aid, lat, lon, speed, status)
         update_csv(aid, lat, lon, speed, ts, emergency, status)
+        build_shared_route(lat, lon, aid)
         return jsonify({'status': 'ok', 'ambulance_id': aid, 'notification': notification, 'path': positions_log.get(aid, [])}), 200
     except Exception as e:
         return jsonify({'error': str(e), 'status': 'error'}), 400
+
+
+@server.route('/api/siren', methods=['POST'])
+def api_siren():
+    data = parse_update_payload()
+    aid = str(data.get('id') or data.get('ambulance_id') or 'AMB-01').strip()
+    # Activate siren and set expiry (30 seconds by default)
+    shared_route_state['siren_active'] = True
+    shared_route_state['last_update'] = datetime.now().isoformat()
+    shared_route_state['siren_expires'] = (datetime.now() + pd.Timedelta(seconds=30)).isoformat()
+    shared_route_state['active_ambulance'] = aid
+    return jsonify({'status': 'ok', 'ambulance_id': aid, 'siren_active': True, 'expires': shared_route_state['siren_expires']}), 200
+
+
+@server.route('/api/route', methods=['GET'])
+def api_route():
+    return jsonify({
+        'active_ambulance': shared_route_state['active_ambulance'],
+        'destination': shared_route_state['destination'],
+        'route': shared_route_state['route'],
+        'siren_active': shared_route_state['siren_active'],
+        'last_update': shared_route_state['last_update'],
+    }), 200
 
 
 @server.route('/api/health', methods=['GET'])
@@ -370,6 +512,10 @@ dash_app.layout = html.Div([
     html.Div([
         html.Div([
             html.Div([
+                html.Div('Shared emergency route', style={'fontSize': '12px', 'textTransform': 'uppercase', 'letterSpacing': '0.14em', 'color': '#9b5c2b', 'marginBottom': '10px'}),
+                html.Div(id='route-status', style={'padding': '10px', 'borderRadius': '12px', 'background': 'rgba(200,68,45,0.10)', 'color': '#7f2b1f', 'fontWeight': '600'})
+            ], style={'padding': '18px', 'borderRadius': '22px', 'background': 'linear-gradient(145deg, #f9efe0, #f7ead6)', 'boxShadow': '0 16px 36px rgba(110, 86, 51, 0.12)', 'border': '1px solid rgba(120, 84, 41, 0.12)'}),
+            html.Div([
                 html.Div('Active ambulances', style={'fontSize': '12px', 'textTransform': 'uppercase', 'letterSpacing': '0.14em', 'color': '#9b5c2b', 'marginBottom': '10px'}),
                 html.Div(id='ambulance-list', style={'height': '260px', 'overflowY': 'auto', 'padding': '12px', 'borderRadius': '18px', 'background': 'rgba(255,248,238,0.9)', 'border': '1px solid rgba(120, 84, 41, 0.12)', 'boxShadow': 'inset 0 1px 0 rgba(255,255,255,0.7)'})
             ], style={'padding': '18px', 'borderRadius': '22px', 'background': 'linear-gradient(145deg, #f9efe0, #f7ead6)', 'boxShadow': '0 16px 36px rgba(110, 86, 51, 0.12)', 'border': '1px solid rgba(120, 84, 41, 0.12)'}),
@@ -394,13 +540,77 @@ dash_app.layout = html.Div([
 
         html.Div([
             html.Div([
-                html.Div('Emergency response map', style={'fontSize': '12px', 'textTransform': 'uppercase', 'letterSpacing': '0.16em', 'color': '#9b5c2b', 'marginBottom': '8px'}),
+                html.Div([
+                    html.Div('Emergency response map', style={'fontSize': '12px', 'textTransform': 'uppercase', 'letterSpacing': '0.16em', 'color': '#9b5c2b', 'marginBottom': '8px'}),
+                    html.Div([
+                        html.A('Home', href='/', style={'color': '#9b5c2b', 'textDecoration': 'none', 'fontWeight': '700', 'marginRight': '12px'}),
+                        html.A('Ambulance', href='/ambulance', style={'color': '#9b5c2b', 'textDecoration': 'none', 'fontWeight': '700'})
+                    ], style={'display': 'flex', 'gap': '10px', 'marginBottom': '8px'})
+                ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center'}),
                 dcc.Graph(id='live-map', config={'displayModeBar': False}, style={'height': '72vh', 'width': '100%'})
             ], style={'padding': '16px', 'borderRadius': '24px', 'background': 'linear-gradient(145deg, #f9efe0, #f7ead6)', 'boxShadow': '0 18px 42px rgba(110, 86, 51, 0.16)', 'border': '1px solid rgba(120, 84, 41, 0.12)'})
         ], style={'flex': '1'})
     ], style={'display': 'flex', 'gap': '18px', 'padding': '20px', 'background': 'linear-gradient(180deg, #fdf7eb, #f6ebde)', 'alignItems': 'stretch'}),
 
     dcc.Interval(id='interval', interval=2000, n_intervals=0),
+    html.Script("""
+    (function(){
+      let sirenTimer = null;
+      function playDashboardSiren(){
+        if (sirenTimer) return;
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(900, ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(1200, ctx.currentTime + 0.2);
+        osc.frequency.linearRampToValueAtTime(900, ctx.currentTime + 0.4);
+        gain.gain.setValueAtTime(0.001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.05, ctx.currentTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.4);
+        sirenTimer = window.setTimeout(function(){ sirenTimer = null; }, 500);
+      }
+            // More selective siren: geolocate viewer then poll route and check proximity
+            let viewerPos = null;
+            function updateViewerPosition(){
+                if (navigator.geolocation){
+                    navigator.geolocation.getCurrentPosition(function(p){ viewerPos = {lat: p.coords.latitude, lon: p.coords.longitude}; }, function(){});
+                }
+            }
+            updateViewerPosition();
+            window.setInterval(function(){
+                fetch('/api/route').then(function(r){ return r.json(); }).then(function(data){
+                    try{
+                        if (!data || !data.route || !data.route.length) return;
+                        if (!viewerPos) { updateViewerPosition(); return; }
+                        // compute min distance from viewer to route polyline
+                        let minD = Infinity;
+                        for (let i=0;i<data.route.length-1;i++){
+                            const a = data.route[i]; const b = data.route[i+1];
+                            // approximate distance via haversine
+                            function toRad(v){return v*Math.PI/180}
+                            function haversine(lat1,lon1,lat2,lon2){
+                                const R=6371; const dLat=toRad(lat2-lat1); const dLon=toRad(lon2-lon1);
+                                const A=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)*Math.sin(dLon/2);
+                                const C=2*Math.atan2(Math.sqrt(A),Math.sqrt(1-A)); return R*C*1000; // meters
+                            }
+                            // sample segment endpoints
+                            minD = Math.min(minD, haversine(viewerPos.lat, viewerPos.lon, a.lat, a.lon));
+                            minD = Math.min(minD, haversine(viewerPos.lat, viewerPos.lon, b.lat, b.lon));
+                        }
+                        // if within 1500 meters, play siren
+                        if (data.siren_active && minD < 1500) playDashboardSiren();
+                    }catch(e){}
+                }).catch(function(){});
+            }, 2000);
+    })();
+    """)
 ], style={'minHeight': '100vh', 'background': 'linear-gradient(180deg, #fdf7eb 0%, #f4eadb 100%)', 'fontFamily': 'Segoe UI, sans-serif', 'color': '#2f241d'})
 
 def get_route(lat1, lon1, lat2, lon2):
@@ -442,7 +652,8 @@ def setup_simulation():
 @dash_app.callback(
     [Output('live-map', 'figure'),
      Output('ambulance-list', 'children'),
-     Output('notifications-list', 'children')],
+     Output('notifications-list', 'children'),
+     Output('route-status', 'children')],
     [Input('interval', 'n_intervals'),
      Input('mode', 'value')]
 )
@@ -653,6 +864,12 @@ def update_map(n, mode):
         plot_bgcolor='rgba(0,0,0,0)'
     )
     
+    route_summary = f"Route: {shared_route_state['destination'] or 'Awaiting ambulance'}"
+    if shared_route_state['siren_active']:
+        route_summary += ' • SIREN ACTIVE'
+    if shared_route_state['active_ambulance']:
+        route_summary += f" • {shared_route_state['active_ambulance']}"
+
     # Build ambulance list
     amb_list = []
     for amb in ambulances:
@@ -677,7 +894,7 @@ def update_map(n, mode):
     if not notif_list:
         notif_list = [html.Div("No notifications yet", style={'color': '#999', 'padding': '10px'})]
     
-    return fig, amb_list, notif_list
+    return fig, amb_list, notif_list, route_summary
 
 if __name__ == '__main__':
     print("🚀 Starting Smart Ambulance Tracker...")
