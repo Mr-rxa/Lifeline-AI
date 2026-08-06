@@ -60,12 +60,13 @@ def cleanup_old_positions():
 
 
 def find_nearest_hospital(lat, lon):
-    if hospitals_df.empty:
-        hospitals_df = load_hospitals()
+    hospital_frame = hospitals_df
+    if hospital_frame.empty:
+        hospital_frame = load_hospitals()
 
     min_dist = float('inf')
     nearest = None
-    for _, hosp in hospitals_df.iterrows():
+    for _, hosp in hospital_frame.iterrows():
         try:
             dist = haversine(float(lat), float(lon), float(hosp['lat']), float(hosp['lon']))
             if dist < min_dist:
@@ -283,6 +284,18 @@ SIM_ROUTE_NAME = ""
 
 dash_app.layout = html.Div([
     html.H2("🚑 LifeLine AI — Smart Ambulance Tracker", style={'color': '#f5576c', 'textAlign': 'center', 'padding': '20px'}),
+
+    html.Button('🚨 Trigger Emergency Siren', id='siren-button', n_clicks=0, style={
+        'background': 'linear-gradient(90deg, #ff4d4f, #ff8c42)',
+        'color': 'white',
+        'border': 'none',
+        'padding': '12px 16px',
+        'borderRadius': '999px',
+        'cursor': 'pointer',
+        'fontWeight': '700',
+        'marginBottom': '14px'
+    }),
+    html.Audio(id='siren-audio', src='/static/siren.wav', autoPlay=False, controls=False, preload='auto'),
     
     html.Div([
         html.Div([
@@ -351,11 +364,13 @@ def setup_simulation():
 @dash_app.callback(
     [Output('live-map', 'figure'),
      Output('ambulance-list', 'children'),
-     Output('notifications-list', 'children')],
+     Output('notifications-list', 'children'),
+     Output('siren-audio', 'autoPlay')],
     [Input('interval', 'n_intervals'),
-     Input('mode', 'value')]
+     Input('mode', 'value'),
+     Input('siren-button', 'n_clicks')]
 )
-def update_map(n, mode):
+def update_map(n, mode, siren_clicks):
     global SIM_INDEX, SIM_ROUTE
     
     # Get ambulances and notifications from the shared server state
@@ -565,7 +580,8 @@ def update_map(n, mode):
     if not notif_list:
         notif_list = [html.Div("No notifications yet", style={'color': '#999', 'padding': '10px'})]
     
-    return fig, amb_list, notif_list
+    should_play = bool(siren_clicks)
+    return fig, amb_list, notif_list, should_play
 
 if __name__ == '__main__':
     print("🚀 Starting Smart Ambulance Tracker...")
