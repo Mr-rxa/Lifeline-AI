@@ -708,14 +708,6 @@ def api_siren():
     lon = float(data.get('lon', 77.2090))
     emergency = str(data.get('emergency') or 'critical')
 
-    targets = reg.find_within_radius(lat, lon, radius_km=10)
-    if not targets:
-        nearest = reg.find_nearest(lat, lon)
-        if nearest:
-            targets = [nearest]
-        else:
-            targets = [s['session_id'] for s in reg.all_sessions()]
-
     event = {
         'type': 'siren_trigger',
         'ambulance_id': aid,
@@ -726,9 +718,10 @@ def api_siren():
     }
 
     pushed_count = 0
-    for sid in targets:
-        target_id = sid if isinstance(sid, str) else sid.get('session_id')
-        if target_id and reg.push(target_id, event):
+    # Always broadcast siren trigger to ALL active dashboards
+    for s in reg.all_sessions():
+        sid = s.get('session_id') if isinstance(s, dict) else s
+        if sid and reg.push(sid, event):
             pushed_count += 1
 
     with _state_lock:
@@ -747,6 +740,7 @@ def api_siren():
             incident_log.pop(0)
 
     return jsonify({'status': 'ok', 'ambulance_id': aid, 'siren_active': True, 'notified_dashboards': pushed_count}), 200
+
 
 
 @server.route('/api/siren/stop', methods=['POST'])
@@ -1101,8 +1095,11 @@ dash_app.index_string = '''<!DOCTYPE html>
                     if (fallbackAudioCtx) { try { fallbackAudioCtx.close(); } catch(e){} fallbackAudioCtx = null; }
                   }
 
+                  let isSirenPlaying = false;
+                  let isTestSiren = false;
+
                   // 5. Play / Stop Siren
-                  function stopSiren() {
+                  function stopSirenLocalOnly() {
                     if (sirenAudio) {
                       sirenAudio.pause();
                       sirenAudio.currentTime = 0;
@@ -1114,6 +1111,12 @@ dash_app.index_string = '''<!DOCTYPE html>
                     }
                     const banner = document.getElementById('siren-alert-banner');
                     if (banner) banner.style.display = 'none';
+                    isSirenPlaying = false;
+                    isTestSiren = false;
+                  }
+
+                  function stopSirenGlobal() {
+                    stopSirenLocalOnly();
                     fetch('/api/siren/stop', {
                       method: 'POST',
                       headers: {'Content-Type':'application/json'},
@@ -1121,7 +1124,9 @@ dash_app.index_string = '''<!DOCTYPE html>
                     });
                   }
 
-                  function triggerSirenSound(data) {
+                  function triggerSirenSound(data, isTest) {
+                    if (isTest) isTestSiren = true;
+                    isSirenPlaying = true;
                     const banner = document.getElementById('siren-alert-banner');
                     const info = document.getElementById('siren-banner-info');
                     if (banner) {
@@ -1141,17 +1146,23 @@ dash_app.index_string = '''<!DOCTYPE html>
                     });
 
                     if (sirenTimer) clearTimeout(sirenTimer);
-                    sirenTimer = setTimeout(stopSiren, 60000);
+                    sirenTimer = setTimeout(function(){
+                      if (isTestSiren) {
+                        stopSirenLocalOnly();
+                      } else {
+                        stopSirenGlobal();
+                      }
+                    }, 60000);
                   }
 
                   // Event delegation for test and stop buttons
                   document.addEventListener('click', function(e){
                     if (e.target) {
                       if (e.target.id === 'btn-test-audio') {
-                        triggerSirenSound({ ambulance_id: 'TEST-SIREN', emergency: 'CRITICAL' });
-                        setTimeout(stopSiren, 3000);
+                        triggerSirenSound({ ambulance_id: 'TEST-SIREN', emergency: 'CRITICAL' }, true);
+                        setTimeout(stopSirenLocalOnly, 3000);
                       } else if (e.target.id === 'btn-stop-siren') {
-                        stopSiren();
+                        stopSirenGlobal();
                       }
                     }
                   });
@@ -1163,12 +1174,26 @@ dash_app.index_string = '''<!DOCTYPE html>
                       const msg = JSON.parse(e.data);
                       console.log("SSE Event Received:", msg);
                       if (msg.type === 'siren_trigger') {
-                        triggerSirenSound(msg);
+                        triggerSirenSound(msg, false);
                       } else if (msg.type === 'siren_stop') {
-                        stopSiren();
+                        stopSirenLocalOnly();
                       }
                     } catch(err) {}
                   };
+
+                  // 7. Backup Siren State Polling (every 3s)
+                  setInterval(function(){
+                    fetch('/api/route').then(r => r.json()).then(data => {
+                      if (data.siren_active) {
+                        if (!isSirenPlaying) {
+                          triggerSirenSound({ ambulance_id: data.active_ambulance || 'AMB-01', emergency: data.emergency || 'CRITICAL' }, false);
+                        }
+                      } else if (isSirenPlaying && !isTestSiren) {
+                        stopSirenLocalOnly();
+                      }
+                    }).catch(function(){});
+                  }, 3000);
+
                 })();
             </script>
         </footer>
