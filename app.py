@@ -21,9 +21,12 @@ SIM_ROUTE = []
 SIM_INDEX = 0
 SIM_ROUTE_NAME = ""
 
-app = dash.Dash(__name__)
-server = app.server  # Expose server for gunicorn
-app.layout = html.Div([
+dash_app = dash.Dash(__name__)
+server = dash_app.server  # Expose server for gunicorn
+app = server  # WSGI entrypoint for hosting platforms like gunicorn
+application = app
+
+dash_app.layout = html.Div([
     html.H2("🚑 LifeLine AI — Smart Ambulance Tracker", style={'color': '#f5576c', 'textAlign': 'center', 'padding': '20px'}),
     
     html.Div([
@@ -90,7 +93,7 @@ def setup_simulation():
         SIM_ROUTE = [(SIM_START[0], SIM_START[1])]
         SIM_ROUTE_NAME = "Unknown Hospital"
 
-@app.callback(
+@dash_app.callback(
     [Output('live-map', 'figure'),
      Output('ambulance-list', 'children'),
      Output('notifications-list', 'children')],
@@ -315,4 +318,4 @@ def update_map(n, mode):
 
 if __name__ == '__main__':
     print("🚀 Starting Smart Ambulance Tracker...")
-    app.run(debug=True)
+    dash_app.run(debug=True)
