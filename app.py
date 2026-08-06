@@ -1,3 +1,4 @@
+import os
 import dash
 from dash import dcc, html
 from dash.dependencies import Output, Input, State
@@ -8,7 +9,7 @@ import requests
 from utils import haversine
 
 # ==== CONFIG ====
-ORS_API_KEY = ""  # Replace with your key
+ORS_API_KEY = os.getenv("ORS_API_KEY", "")
 # =================
 
 # Load hospital data
@@ -54,6 +55,9 @@ app.layout = html.Div([
 ])
 
 def get_route(lat1, lon1, lat2, lon2):
+    if not ORS_API_KEY:
+        return [], []
+
     url = "https://api.openrouteservice.org/v2/directions/driving-car"
     headers = {"Authorization": ORS_API_KEY}
     params = {"start": f"{lon1},{lat1}", "end": f"{lon2},{lat2}"}

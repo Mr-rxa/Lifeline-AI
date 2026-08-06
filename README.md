@@ -1,68 +1,25 @@
-# Smart Ambulance Tracker
+# LifeLine AI — Vercel-ready emergency experience
 
-Real-time ambulance tracking and nearest-hospital routing dashboard built with Dash/Plotly and a Flask GPS ingest server.
+This project now runs as a fast, modern front end with serverless API routes that are ready to deploy on Vercel.
 
-## Features
-- Live GPS ingest via simple mobile web page (Flask) storing to `live_positions.csv`.
-- Dash map dashboard with Live and Simulation modes.
-- Nearest-hospital routing using OpenRouteService (ORS) directions API.
-- Hospital directory (50 hospitals) and sample ambulance routes for simulation.
-- Supports multiple ambulances (ID field on sender page).
-- Map preserves zoom/pan while updating; auto-fits routes when needed.
+## What changed
+- Rebuilt the experience around a polished, modern landing page with a dynamic 3D-inspired UI.
+- Added Vercel-compatible API endpoints at `/api/health` and `/api/ambulance`.
+- Kept the emergency-routing concept intact while making the app lightweight and deployment-friendly.
 
-## Quick Start (Local)
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. Set your ORS API key (get one free at https://openrouteservice.org):
-   ```bash
-   set ORS_API_KEY=YOUR_KEY_HERE   # PowerShell: $env:ORS_API_KEY="YOUR_KEY_HERE"
-   ```
-3. Run the tracker server (GPS ingest):
-   ```bash
-   python tracker_server.py
-   ```
-   - Open the printed URL (or http://localhost:5000) on a phone/laptop.
-   - Allow location; enter ambulance ID if needed; it starts sending live GPS.
-4. Run the dashboard:
-   ```bash
-   python app.py
-   ```
-   - Open the shown Dash URL (default http://127.0.0.1:8050).
-   - Choose **Live GPS** to see real ambulances, or **Simulation** for demo.
+## Local checks
+```bash
+npm test
+```
 
-## Stable Public URL Options
-- **LocalTunnel (custom subdomain):**
-  ```bash
-  lt --port 5000 --subdomain myambulance
-  # use https://myambulance.loca.lt on phones
-  ```
-- **Railway/Render deploy (Student Pack friendly):**
-  - `Procfile` included. Set env var `PORT` is handled automatically; set `ORS_API_KEY` in project settings.
-  - Start command: `python tracker_server.py` (or `gunicorn tracker_server:app` if you add gunicorn).
+## Deploy to Vercel
+1. Push this folder to GitHub.
+2. Open Vercel and import the repository.
+3. Vercel will detect the static app and serverless API automatically.
+4. Deploy and visit the generated URL.
 
 ## Files
-- `app.py` — Dash dashboard (map, routing, live/sim modes).
-- `tracker_server.py` — Flask server for GPS ingest + sender web page.
-- `utils.py` — haversine distance, interpolation helpers.
-- `hospitals.csv` — 50 hospitals with lat/lon.
-- `ambulance_routes.csv` — sample simulated routes (A–O).
-- `live_positions.csv` — current positions store (auto-created).
-- `requirements.txt` — Python deps.
-- `Procfile` — process definition for hosting.
-
-## API Endpoints (tracker_server)
-- `POST /update_location` — body: `{ id, lat, lon, speed_kmph? }` writes to CSV.
-- `GET /positions` — returns JSON list of current rows.
-- `GET /` — GPS sender page (mobile-friendly).
-
-## Notes
-- Keep your ORS API key private; prefer env vars over hardcoding.
-- If map tiles don’t load, check internet/connectivity or switch map style.
-- For multiple ambulances, use distinct IDs in the sender page.
-
-## Troubleshooting
-- **Map keeps resetting zoom:** fixed via `uirevision`; ensure you’re on latest code.
-- **No live points:** verify phone has location permission and correct URL (localtunnel/hosted URL).
-- **Routing fails:** check ORS API key or network; console logs show API errors.
+- `index.html` — the modern UI shell.
+- `api/health.js` — health check endpoint.
+- `api/ambulance.js` — nearest-hospital routing mock endpoint.
+- `vercel.json` — Vercel routing configuration.
