@@ -3,7 +3,7 @@ import time
 import uuid
 from datetime import datetime
 import dash
-from flask import Flask
+from flask import Flask, redirect
 from dash import dcc, html
 from dash.dependencies import Output, Input, State
 import plotly.graph_objs as go
@@ -128,10 +128,20 @@ def update_csv(aid, lat, lon, speed, ts, emergency='normal', status='active'):
 
 # Dash app + WSGI entrypoint for hosting platforms
 # Create this before the Flask route decorators so the routes register correctly.
-dash_app = dash.Dash(__name__)
+dash_app = dash.Dash(__name__, routes_pathname_prefix='/dashboard/')
 server = dash_app.server
 app = server
 application = app
+
+
+@server.route('/')
+def landing_page():
+    return open(os.path.join(BASE_DIR, 'index.html'), 'r', encoding='utf-8').read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
+
+
+@server.route('/dashboard')
+def dashboard_redirect():
+    return redirect('/dashboard/', code=302)
 
 # Expose static assets for the siren and other frontend files
 server.static_folder = os.path.join(BASE_DIR, 'static')
@@ -147,14 +157,14 @@ def ambulance_interface():
       <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
       <title>LifeLine AI — Ambulance Interface</title>
       <style>
-        body { font-family: Inter, sans-serif; margin: 0; background: linear-gradient(135deg, #07111f, #132a4d); color: white; min-height: 100vh; display: grid; place-items: center; }
-        .card { width: min(92vw, 560px); background: rgba(8, 15, 30, 0.92); border: 1px solid rgba(255,255,255,0.12); border-radius: 24px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.35); }
+        body { font-family: Inter, sans-serif; margin: 0; background: linear-gradient(135deg, #f7ead8, #f0d8b8); color: #2f241d; min-height: 100vh; display: grid; place-items: center; }
+        .card { width: min(92vw, 560px); background: rgba(255, 248, 238, 0.96); border: 1px solid rgba(120, 84, 41, 0.16); border-radius: 24px; padding: 24px; box-shadow: 0 20px 50px rgba(110, 86, 51, 0.16); }
         h1 { margin-top: 0; font-size: 1.6rem; }
-        label { display: block; margin: 10px 0 6px; color: #8db7ff; }
-        input, select, button { width: 100%; padding: 12px 13px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.08); color: white; margin-bottom: 10px; }
-        button { cursor: pointer; background: linear-gradient(90deg, #4fd1c5, #5b8cff); color: #03111d; font-weight: 700; border: none; }
-        .status { margin-top: 10px; padding: 12px; border-radius: 12px; background: rgba(79, 209, 197, 0.15); }
-        .siren { background: linear-gradient(90deg, #ff4d4f, #ff8c42); color: white; }
+        label { display: block; margin: 10px 0 6px; color: #9b5c2b; }
+        input, select, button { width: 100%; padding: 12px 13px; border-radius: 12px; border: 1px solid rgba(120, 84, 41, 0.2); background: rgba(255,255,255,0.7); color: #2f241d; margin-bottom: 10px; }
+        button { cursor: pointer; background: linear-gradient(90deg, #c8442d, #d98b3c); color: white; font-weight: 700; border: none; }
+        .status { margin-top: 10px; padding: 12px; border-radius: 12px; background: rgba(200, 68, 45, 0.12); }
+        .siren { background: linear-gradient(90deg, #c8442d, #d98b3c); color: white; }
       </style>
     </head>
     <body>
@@ -184,6 +194,7 @@ def ambulance_interface():
         const lonInput = document.getElementById('lon');
         const statusEl = document.getElementById('status');
         const sirenAudio = document.getElementById('siren-audio');
+        let sirenEnabled = false;
 
         function fillFromCoordinates(latitude, longitude) {
           latInput.value = latitude.toFixed(6);
@@ -227,15 +238,25 @@ def ambulance_interface():
           }
         }
 
+        function enableSiren() {
+          if (sirenEnabled) return;
+          sirenEnabled = true;
+          sirenAudio.play().catch(() => {});
+        }
+
         function triggerSiren() {
+          enableSiren();
           sirenAudio.currentTime = 0;
           sirenAudio.play().catch(() => {
-            statusEl.textContent = 'Siren ready; press again if browser blocks autoplay.';
+            statusEl.textContent = 'Siren ready; press again if the browser blocks autoplay.';
           });
           statusEl.textContent = '🚨 Loud siren activated';
         }
 
+        window.addEventListener('pointerdown', enableSiren, { once: true });
+        window.addEventListener('keydown', enableSiren, { once: true });
         setLocationFromBrowser();
+        triggerSiren();
       </script>
     </body>
     </html>
@@ -274,6 +295,31 @@ def update_location():
         return jsonify({'error': str(e), 'status': 'error'}), 400
 
 
+@server.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({'status': 'ok', 'service': 'lifeline-ai', 'ambulances': len(ambulances_store)}), 200
+
+
+@server.route('/api/ambulance', methods=['GET'])
+def api_ambulance():
+    lat = request.args.get('lat', 28.6139, type=float)
+    lon = request.args.get('lon', 77.2090, type=float)
+    nearest, distance = find_nearest_hospital(lat, lon)
+    eta = max(3, int(round((distance / 50) if distance else 5)))
+    payload = {
+        'status': 'ok',
+        'nearestHospital': {
+            'name': nearest['name'] if nearest is not None else 'No hospital found',
+            'lat': float(nearest['lat']) if nearest is not None else None,
+            'lon': float(nearest['lon']) if nearest is not None else None,
+        },
+        'distanceKm': round(distance, 2) if nearest is not None else None,
+        'etaMinutes': eta,
+        'coordinates': {'lat': lat, 'lon': lon},
+    }
+    return jsonify(payload), 200
+
+
 @server.route('/api/ambulances', methods=['GET'])
 def api_ambulances():
     enriched = []
@@ -309,27 +355,30 @@ SIM_ROUTE_NAME = ""
 dash_app.layout = html.Div([
     html.Div([
         html.Div([
-            html.H1("LifeLine AI", style={'margin': '0', 'fontSize': '34px', 'fontWeight': '800', 'color': '#ffffff'}),
-            html.P("Emergency coordination • Real-time response visibility", style={'margin': '6px 0 0', 'color': '#8db7ff', 'fontSize': '15px'})
-        ], style={'flex': '1'}),
+            html.Div([
+                html.Span('Emergency', style={'display':'inline-block','padding':'6px 10px','borderRadius':'999px','background':'rgba(214, 96, 61, 0.16)','color':'#d6603d','fontWeight':'700','marginRight':'8px'}),
+                html.H1('LifeLine AI', style={'margin':'0','display':'inline-block','fontSize':'34px','fontWeight':'800','color':'#2f241d'})
+            ], style={'display':'flex','alignItems':'center','gap':'8px'}),
+            html.P('Mission-ready ambulance coordination • live response intelligence', style={'margin':'8px 0 0','color':'#7c6753','fontSize':'15px'})
+        ], style={'flex':'1'}),
         html.Div([
-            html.Div("Live", style={'display': 'inline-block', 'padding': '6px 10px', 'borderRadius': '999px', 'background': 'rgba(79, 209, 197, 0.16)', 'color': '#4fd1c5', 'fontWeight': '700', 'marginRight': '10px'}),
-            html.Div("Connected", style={'display': 'inline-block', 'padding': '6px 10px', 'borderRadius': '999px', 'background': 'rgba(92, 140, 255, 0.16)', 'color': '#7ba0ff', 'fontWeight': '700'})
+            html.Div('LIVE', style={'display': 'inline-block', 'padding': '7px 11px', 'borderRadius': '999px', 'background': 'rgba(164, 113, 62, 0.18)', 'color': '#9b5c2b', 'fontWeight': '700', 'marginRight': '10px'}),
+            html.Div('ACTIVE', style={'display': 'inline-block', 'padding': '7px 11px', 'borderRadius': '999px', 'background': 'rgba(214, 96, 61, 0.16)', 'color': '#b9442d', 'fontWeight': '700'})
         ], style={'display': 'flex', 'alignItems': 'center'})
-    ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'padding': '24px 28px', 'background': 'linear-gradient(135deg, #07111f, #132a4d)', 'borderBottom': '1px solid rgba(255,255,255,0.08)'}),
+    ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'padding': '24px 28px', 'background': 'linear-gradient(135deg, #f5ebdc, #efe0c7)', 'borderBottom': '1px solid rgba(80, 55, 34, 0.08)'}),
 
     html.Div([
         html.Div([
             html.Div([
-                html.Div("Active ambulances", style={'fontSize': '13px', 'textTransform': 'uppercase', 'letterSpacing': '0.12em', 'color': '#8db7ff', 'marginBottom': '8px'}),
-                html.Div(id='ambulance-list', style={'height': '260px', 'overflowY': 'auto', 'padding': '12px', 'borderRadius': '16px', 'background': 'rgba(255,255,255,0.04)', 'border': '1px solid rgba(255,255,255,0.08)'})
-            ], style={'padding': '18px', 'borderRadius': '22px', 'background': 'rgba(8, 15, 30, 0.86)', 'boxShadow': '0 16px 40px rgba(0,0,0,0.25)', 'border': '1px solid rgba(255,255,255,0.08)'}),
+                html.Div('Active ambulances', style={'fontSize': '12px', 'textTransform': 'uppercase', 'letterSpacing': '0.14em', 'color': '#9b5c2b', 'marginBottom': '10px'}),
+                html.Div(id='ambulance-list', style={'height': '260px', 'overflowY': 'auto', 'padding': '12px', 'borderRadius': '18px', 'background': 'rgba(255,248,238,0.9)', 'border': '1px solid rgba(120, 84, 41, 0.12)', 'boxShadow': 'inset 0 1px 0 rgba(255,255,255,0.7)'})
+            ], style={'padding': '18px', 'borderRadius': '22px', 'background': 'linear-gradient(145deg, #f9efe0, #f7ead6)', 'boxShadow': '0 16px 36px rgba(110, 86, 51, 0.12)', 'border': '1px solid rgba(120, 84, 41, 0.12)'}),
             html.Div([
-                html.Div("Recent alerts", style={'fontSize': '13px', 'textTransform': 'uppercase', 'letterSpacing': '0.12em', 'color': '#8db7ff', 'marginBottom': '8px'}),
-                html.Div(id='notifications-list', style={'height': '220px', 'overflowY': 'auto', 'padding': '12px', 'borderRadius': '16px', 'background': 'rgba(255,255,255,0.04)', 'border': '1px solid rgba(255,255,255,0.08)'})
-            ], style={'padding': '18px', 'borderRadius': '22px', 'background': 'rgba(8, 15, 30, 0.86)', 'boxShadow': '0 16px 40px rgba(0,0,0,0.25)', 'border': '1px solid rgba(255,255,255,0.08)'}),
+                html.Div('Recent alerts', style={'fontSize': '12px', 'textTransform': 'uppercase', 'letterSpacing': '0.14em', 'color': '#9b5c2b', 'marginBottom': '10px'}),
+                html.Div(id='notifications-list', style={'height': '220px', 'overflowY': 'auto', 'padding': '12px', 'borderRadius': '18px', 'background': 'rgba(255,248,238,0.9)', 'border': '1px solid rgba(120, 84, 41, 0.12)', 'boxShadow': 'inset 0 1px 0 rgba(255,255,255,0.7)'})
+            ], style={'padding': '18px', 'borderRadius': '22px', 'background': 'linear-gradient(145deg, #f9efe0, #f7ead6)', 'boxShadow': '0 16px 36px rgba(110, 86, 51, 0.12)', 'border': '1px solid rgba(120, 84, 41, 0.12)'}),
             html.Div([
-                html.Div("Control mode", style={'fontSize': '13px', 'textTransform': 'uppercase', 'letterSpacing': '0.12em', 'color': '#8db7ff', 'marginBottom': '8px'}),
+                html.Div('Control mode', style={'fontSize': '12px', 'textTransform': 'uppercase', 'letterSpacing': '0.14em', 'color': '#9b5c2b', 'marginBottom': '10px'}),
                 dcc.Dropdown(
                     id='mode',
                     options=[
@@ -340,16 +389,19 @@ dash_app.layout = html.Div([
                     clearable=False,
                     style={'color': '#111'}
                 )
-            ], style={'padding': '18px', 'borderRadius': '22px', 'background': 'rgba(8, 15, 30, 0.86)', 'boxShadow': '0 16px 40px rgba(0,0,0,0.25)', 'border': '1px solid rgba(255,255,255,0.08)'})
+            ], style={'padding': '18px', 'borderRadius': '22px', 'background': 'linear-gradient(145deg, #f9efe0, #f7ead6)', 'boxShadow': '0 16px 36px rgba(110, 86, 51, 0.12)', 'border': '1px solid rgba(120, 84, 41, 0.12)'})
         ], style={'width': '320px', 'display': 'flex', 'flexDirection': 'column', 'gap': '16px'}),
 
         html.Div([
-            dcc.Graph(id='live-map', config={'displayModeBar': False}, style={'height': '72vh', 'width': '100%'})
-        ], style={'flex': '1', 'padding': '18px', 'borderRadius': '24px', 'background': 'rgba(8, 15, 30, 0.86)', 'boxShadow': '0 16px 40px rgba(0,0,0,0.25)', 'border': '1px solid rgba(255,255,255,0.08)'}),
-    ], style={'display': 'flex', 'gap': '18px', 'padding': '20px', 'background': 'linear-gradient(180deg, #0a1328, #091224)', 'alignItems': 'stretch'}),
+            html.Div([
+                html.Div('Emergency response map', style={'fontSize': '12px', 'textTransform': 'uppercase', 'letterSpacing': '0.16em', 'color': '#9b5c2b', 'marginBottom': '8px'}),
+                dcc.Graph(id='live-map', config={'displayModeBar': False}, style={'height': '72vh', 'width': '100%'})
+            ], style={'padding': '16px', 'borderRadius': '24px', 'background': 'linear-gradient(145deg, #f9efe0, #f7ead6)', 'boxShadow': '0 18px 42px rgba(110, 86, 51, 0.16)', 'border': '1px solid rgba(120, 84, 41, 0.12)'})
+        ], style={'flex': '1'})
+    ], style={'display': 'flex', 'gap': '18px', 'padding': '20px', 'background': 'linear-gradient(180deg, #fdf7eb, #f6ebde)', 'alignItems': 'stretch'}),
 
     dcc.Interval(id='interval', interval=2000, n_intervals=0),
-])
+], style={'minHeight': '100vh', 'background': 'linear-gradient(180deg, #fdf7eb 0%, #f4eadb 100%)', 'fontFamily': 'Segoe UI, sans-serif', 'color': '#2f241d'})
 
 def get_route(lat1, lon1, lat2, lon2):
     if not ORS_API_KEY:
@@ -472,9 +524,10 @@ def update_map(n, mode):
     fig.add_trace(go.Scattermap(
         lat=hospitals_df['lat'], lon=hospitals_df['lon'],
         mode='markers',
-        marker=dict(size=12, color='red', symbol='hospital'),
+        marker=dict(size=13, color='#b94a2d', symbol='hospital'),
         text=hospitals_df['name'],
-        name='Hospitals'
+        name='Hospitals',
+        hovertemplate='<b>%{text}</b><extra></extra>'
     ))
 
     center_lat, center_lon = 20, 78
@@ -496,18 +549,18 @@ def update_map(n, mode):
             
             # Set color based on emergency level
             if emergency == 'critical':
-                color = 'red'
+                color = '#c8442d'
                 size = 18
             elif emergency == 'urgent':
-                color = 'orange'
+                color = '#d98b3c'
                 size = 16
             else:
-                color = 'blue'
+                color = '#b58b64'
                 size = 14
             
             # Skip if arrived
             if status == 'arrived':
-                color = 'gray'
+                color = '#8b6d4f'
                 size = 12
             
             fig.add_trace(go.Scattermap(
@@ -527,7 +580,7 @@ def update_map(n, mode):
                 fig.add_trace(go.Scattermap(
                     lat=path_lats, lon=path_lons,
                     mode='lines',
-                    line=dict(width=2, color=color),
+                    line=dict(width=3, color=color, dash='solid'),
                     name=f"Route {aid}",
                     showlegend=False
                 ))
@@ -538,7 +591,7 @@ def update_map(n, mode):
             fig.add_trace(go.Scattermap(
                 lat=route_lats, lon=route_lons,
                 mode='lines',
-                line=dict(width=4, color='green'),
+                line=dict(width=4, color='#7c5f2c'),
                 name=f"Route to {route_name}"
             ))
             all_route_lats.extend(route_lats)
@@ -560,7 +613,7 @@ def update_map(n, mode):
                     fig.add_trace(go.Scattermap(
                         lat=rlats, lon=rlons,
                         mode='lines',
-                        line=dict(width=4, color='green'),
+                        line=dict(width=4, color='#7c5f2c'),
                         name=f"Route to {nearest['name']}"
                     ))
                     all_route_lats.extend(rlats)
@@ -592,16 +645,18 @@ def update_map(n, mode):
             zoom_level = 8
 
     fig.update_layout(
-        map=dict(center=dict(lat=center_lat, lon=center_lon), zoom=zoom_level, style="open-street-map"),
+        map=dict(center=dict(lat=center_lat, lon=center_lon), zoom=zoom_level, style='carto-positron'),
         margin={"r": 0, "t": 0, "l": 0, "b": 0},
         uirevision='constant',
-        hovermode='closest'
+        hovermode='closest',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)'
     )
     
     # Build ambulance list
     amb_list = []
     for amb in ambulances:
-        color = 'red' if amb.get('emergency') == 'critical' else 'orange' if amb.get('emergency') == 'urgent' else 'green'
+        color = '#c8442d' if amb.get('emergency') == 'critical' else '#d98b3c' if amb.get('emergency') == 'urgent' else '#b58b64'
         amb_list.append(html.Div([
             html.Div(f"🚑 {amb['id']}", style={'fontWeight': 'bold', 'color': color}),
             html.Div(f"Speed: {amb.get('speed', 0):.1f} km/h", style={'fontSize': '12px'}),
