@@ -3,6 +3,7 @@ import time
 import uuid
 from datetime import datetime
 import dash
+from flask import Flask
 from dash import dcc, html
 from dash.dependencies import Output, Input, State
 import plotly.graph_objs as go
@@ -61,7 +62,7 @@ def cleanup_old_positions():
 
 def find_nearest_hospital(lat, lon):
     hospital_frame = hospitals_df
-    if hospital_frame.empty:
+    if hospital_frame is None or hospital_frame.empty:
         hospital_frame = load_hospitals()
 
     min_dist = float('inf')
@@ -132,6 +133,9 @@ server = dash_app.server
 app = server
 application = app
 
+# Expose static assets for the siren and other frontend files
+server.static_folder = os.path.join(BASE_DIR, 'static')
+
 
 @server.route('/ambulance')
 def ambulance_interface():
@@ -150,6 +154,7 @@ def ambulance_interface():
         input, select, button { width: 100%; padding: 12px 13px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.08); color: white; margin-bottom: 10px; }
         button { cursor: pointer; background: linear-gradient(90deg, #4fd1c5, #5b8cff); color: #03111d; font-weight: 700; border: none; }
         .status { margin-top: 10px; padding: 12px; border-radius: 12px; background: rgba(79, 209, 197, 0.15); }
+        .siren { background: linear-gradient(90deg, #ff4d4f, #ff8c42); color: white; }
       </style>
     </head>
     <body>
@@ -169,28 +174,36 @@ def ambulance_interface():
           <option value=\"critical\">Critical</option>
         </select>
         <button onclick=\"sendLocation()\">Send live update</button>
+        <button class=\"siren\" onclick=\"triggerSiren()\">🚨 Trigger loud siren</button>
         <div id=\"status\" class=\"status\">Waiting for a signal…</div>
+        <audio id=\"siren-audio\" src=\"/static/siren.wav\" preload=\"auto\"></audio>
       </div>
       <script>
         const idInput = document.getElementById('id');
         const latInput = document.getElementById('lat');
         const lonInput = document.getElementById('lon');
         const statusEl = document.getElementById('status');
+        const sirenAudio = document.getElementById('siren-audio');
+
+        function fillFromCoordinates(latitude, longitude) {
+          latInput.value = latitude.toFixed(6);
+          lonInput.value = longitude.toFixed(6);
+          statusEl.textContent = 'Live coordinates captured.';
+        }
 
         function setLocationFromBrowser() {
           if (!navigator.geolocation) {
-            statusEl.textContent = 'Location access is not supported on this device.';
+            statusEl.textContent = 'Location access is not supported. Using fallback coordinates.';
+            fillFromCoordinates(28.6139, 77.2090);
             return;
           }
+
           navigator.geolocation.getCurrentPosition((pos) => {
-            latInput.value = pos.coords.latitude.toFixed(6);
-            lonInput.value = pos.coords.longitude.toFixed(6);
-            statusEl.textContent = 'Live coordinates captured.';
+            fillFromCoordinates(pos.coords.latitude, pos.coords.longitude);
           }, () => {
-            latInput.value = '28.6139';
-            lonInput.value = '77.2090';
-            statusEl.textContent = 'Using fallback coordinates.';
-          });
+            fillFromCoordinates(28.6139, 77.2090);
+            statusEl.textContent = 'Location permission denied or unavailable. Using fallback coordinates.';
+          }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 });
         }
 
         async function sendLocation() {
@@ -209,6 +222,17 @@ def ambulance_interface():
           });
           const data = await response.json();
           statusEl.textContent = data.status === 'ok' ? 'Update sent successfully.' : 'Update failed.';
+          if (data.status === 'ok' && payload.emergency !== 'normal') {
+            triggerSiren();
+          }
+        }
+
+        function triggerSiren() {
+          sirenAudio.currentTime = 0;
+          sirenAudio.play().catch(() => {
+            statusEl.textContent = 'Siren ready; press again if browser blocks autoplay.';
+          });
+          statusEl.textContent = '🚨 Loud siren activated';
         }
 
         setLocationFromBrowser();
@@ -283,45 +307,47 @@ SIM_INDEX = 0
 SIM_ROUTE_NAME = ""
 
 dash_app.layout = html.Div([
-    html.H2("🚑 LifeLine AI — Smart Ambulance Tracker", style={'color': '#f5576c', 'textAlign': 'center', 'padding': '20px'}),
-
-    html.Button('🚨 Trigger Emergency Siren', id='siren-button', n_clicks=0, style={
-        'background': 'linear-gradient(90deg, #ff4d4f, #ff8c42)',
-        'color': 'white',
-        'border': 'none',
-        'padding': '12px 16px',
-        'borderRadius': '999px',
-        'cursor': 'pointer',
-        'fontWeight': '700',
-        'marginBottom': '14px'
-    }),
-    html.Audio(id='siren-audio', src='/static/siren.wav', autoPlay=False, controls=False, preload='auto'),
-    
     html.Div([
         html.Div([
-            html.H4("Active Ambulances"),
-            html.Div(id='ambulance-list', style={'height': '300px', 'overflowY': 'auto', 'border': '1px solid #ddd', 'padding': '10px', 'borderRadius': '5px'})
-        ], style={'width': '32%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '2%'}),
-        
+            html.H1("LifeLine AI", style={'margin': '0', 'fontSize': '34px', 'fontWeight': '800', 'color': '#ffffff'}),
+            html.P("Emergency coordination • Real-time response visibility", style={'margin': '6px 0 0', 'color': '#8db7ff', 'fontSize': '15px'})
+        ], style={'flex': '1'}),
         html.Div([
-            html.H4("Hospital Notifications"),
-            html.Div(id='notifications-list', style={'height': '300px', 'overflowY': 'auto', 'border': '1px solid #ddd', 'padding': '10px', 'borderRadius': '5px'})
-        ], style={'width': '32%', 'display': 'inline-block', 'verticalAlign': 'top', 'marginRight': '2%'}),
-        
+            html.Div("Live", style={'display': 'inline-block', 'padding': '6px 10px', 'borderRadius': '999px', 'background': 'rgba(79, 209, 197, 0.16)', 'color': '#4fd1c5', 'fontWeight': '700', 'marginRight': '10px'}),
+            html.Div("Connected", style={'display': 'inline-block', 'padding': '6px 10px', 'borderRadius': '999px', 'background': 'rgba(92, 140, 255, 0.16)', 'color': '#7ba0ff', 'fontWeight': '700'})
+        ], style={'display': 'flex', 'alignItems': 'center'})
+    ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'padding': '24px 28px', 'background': 'linear-gradient(135deg, #07111f, #132a4d)', 'borderBottom': '1px solid rgba(255,255,255,0.08)'}),
+
+    html.Div([
         html.Div([
-            html.H4("Map Mode"),
-            dcc.Dropdown(
-                id='mode',
-                options=[
-                    {'label': 'Live Tracking', 'value': 'live'},
-                    {'label': 'Demo Simulation', 'value': 'sim'}
-                ],
-                value='live'
-            )
-        ], style={'width': '32%', 'display': 'inline-block', 'verticalAlign': 'top'})
-    ], style={'backgroundColor': '#f8f9fa', 'padding': '15px', 'borderRadius': '8px', 'marginBottom': '20px'}),
-    
-    dcc.Graph(id='live-map', style={'height': '70vh'}),
+            html.Div([
+                html.Div("Active ambulances", style={'fontSize': '13px', 'textTransform': 'uppercase', 'letterSpacing': '0.12em', 'color': '#8db7ff', 'marginBottom': '8px'}),
+                html.Div(id='ambulance-list', style={'height': '260px', 'overflowY': 'auto', 'padding': '12px', 'borderRadius': '16px', 'background': 'rgba(255,255,255,0.04)', 'border': '1px solid rgba(255,255,255,0.08)'})
+            ], style={'padding': '18px', 'borderRadius': '22px', 'background': 'rgba(8, 15, 30, 0.86)', 'boxShadow': '0 16px 40px rgba(0,0,0,0.25)', 'border': '1px solid rgba(255,255,255,0.08)'}),
+            html.Div([
+                html.Div("Recent alerts", style={'fontSize': '13px', 'textTransform': 'uppercase', 'letterSpacing': '0.12em', 'color': '#8db7ff', 'marginBottom': '8px'}),
+                html.Div(id='notifications-list', style={'height': '220px', 'overflowY': 'auto', 'padding': '12px', 'borderRadius': '16px', 'background': 'rgba(255,255,255,0.04)', 'border': '1px solid rgba(255,255,255,0.08)'})
+            ], style={'padding': '18px', 'borderRadius': '22px', 'background': 'rgba(8, 15, 30, 0.86)', 'boxShadow': '0 16px 40px rgba(0,0,0,0.25)', 'border': '1px solid rgba(255,255,255,0.08)'}),
+            html.Div([
+                html.Div("Control mode", style={'fontSize': '13px', 'textTransform': 'uppercase', 'letterSpacing': '0.12em', 'color': '#8db7ff', 'marginBottom': '8px'}),
+                dcc.Dropdown(
+                    id='mode',
+                    options=[
+                        {'label': 'Live Tracking', 'value': 'live'},
+                        {'label': 'Demo Simulation', 'value': 'sim'}
+                    ],
+                    value='live',
+                    clearable=False,
+                    style={'color': '#111'}
+                )
+            ], style={'padding': '18px', 'borderRadius': '22px', 'background': 'rgba(8, 15, 30, 0.86)', 'boxShadow': '0 16px 40px rgba(0,0,0,0.25)', 'border': '1px solid rgba(255,255,255,0.08)'})
+        ], style={'width': '320px', 'display': 'flex', 'flexDirection': 'column', 'gap': '16px'}),
+
+        html.Div([
+            dcc.Graph(id='live-map', config={'displayModeBar': False}, style={'height': '72vh', 'width': '100%'})
+        ], style={'flex': '1', 'padding': '18px', 'borderRadius': '24px', 'background': 'rgba(8, 15, 30, 0.86)', 'boxShadow': '0 16px 40px rgba(0,0,0,0.25)', 'border': '1px solid rgba(255,255,255,0.08)'}),
+    ], style={'display': 'flex', 'gap': '18px', 'padding': '20px', 'background': 'linear-gradient(180deg, #0a1328, #091224)', 'alignItems': 'stretch'}),
+
     dcc.Interval(id='interval', interval=2000, n_intervals=0),
 ])
 
@@ -364,13 +390,11 @@ def setup_simulation():
 @dash_app.callback(
     [Output('live-map', 'figure'),
      Output('ambulance-list', 'children'),
-     Output('notifications-list', 'children'),
-     Output('siren-audio', 'autoPlay')],
+     Output('notifications-list', 'children')],
     [Input('interval', 'n_intervals'),
-     Input('mode', 'value'),
-     Input('siren-button', 'n_clicks')]
+     Input('mode', 'value')]
 )
-def update_map(n, mode, siren_clicks):
+def update_map(n, mode):
     global SIM_INDEX, SIM_ROUTE
     
     # Get ambulances and notifications from the shared server state
@@ -385,6 +409,24 @@ def update_map(n, mode, siren_clicks):
         notifications = notifications_log[-20:] if notifications_log else []
     except Exception:
         notifications = []
+
+    if not ambulances and 'live_positions.csv' in os.listdir(BASE_DIR):
+        try:
+            with open(CSV_FILE, 'r') as handle:
+                reader = csv.DictReader(handle)
+                ambulances = [
+                    {
+                        'id': row['id'],
+                        'lat': float(row['lat']),
+                        'lon': float(row['lon']),
+                        'speed': float(row.get('speed_kmph', 0) or 0),
+                        'status': row.get('status', 'active'),
+                        'emergency': row.get('emergency', 'normal')
+                    }
+                    for row in reader
+                ]
+        except Exception:
+            ambulances = []
     
     live_positions = []
     route_lats, route_lons = [], []
@@ -580,8 +622,7 @@ def update_map(n, mode, siren_clicks):
     if not notif_list:
         notif_list = [html.Div("No notifications yet", style={'color': '#999', 'padding': '10px'})]
     
-    should_play = bool(siren_clicks)
-    return fig, amb_list, notif_list, should_play
+    return fig, amb_list, notif_list
 
 if __name__ == '__main__':
     print("🚀 Starting Smart Ambulance Tracker...")

@@ -1,2 +1,3 @@
 id,lat,lon,speed_kmph,ts,emergency,status
-AMB-01,28.6,77.2,42.0,1785994290.4081802,urgent,in_transit
+AMB-01,28.8902,76.5825,42.0,1785994826.4456997,critical,in_transit
+AMB-TEST,28.6,77.2,42.0,1785994970.50522,critical,in_transit
