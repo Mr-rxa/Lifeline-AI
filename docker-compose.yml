@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: lifeline
       POSTGRES_USER: lifeline
-      POSTGRES_PASSWORD: lifeline
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - lifeline-postgres:/var/lib/postgresql/data
     healthcheck:
@@ -20,8 +20,8 @@ services:
     build:
       context: ./backend
     environment:
-      DATABASE_URL: postgresql://lifeline:lifeline@db:5432/lifeline
-      JWT_SECRET: change-this-in-production
+      DATABASE_URL: postgresql://lifeline:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/lifeline
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
     ports:
       - "8000:8000"

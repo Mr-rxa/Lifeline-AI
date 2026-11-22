@@ -61,15 +61,6 @@ Open `http://localhost:5000`.
 The common public homepage is `/`. Staff-only dispatcher access is available at
 `/dispatcher`; the landing page does not expose an admin login.
 
-Demo accounts:
-
-| Role | Login | Password |
-| --- | --- | --- |
-| Admin | `admin` | `Admin@123` |
-| Dispatcher | `dispatcher` | `Dispatcher@123` |
-| Driver | `driver1` | `Driver@123` |
-| Hospital | hospital username configured in the seed | `Hospital@123` |
-
 The app creates `lifeline.db` and seeds demo hospitals, ambulances, users, and
 incidents on startup. On a fresh database the UI may show a first-run setup
 screen; complete it with a new admin account, then sign in.
@@ -122,17 +113,6 @@ Seeded demo identifiers:
 | Hospital | `hospital1@lifeline.ai` |
 | Citizen | `citizen@lifeline.ai` |
 | Police | `police1@lifeline.ai` |
-
-Demo passwords:
-
-| Role | Password |
-| --- | --- |
-| Admin | `Admin@123` |
-| Dispatcher | `Dispatcher@123` |
-| Driver | `Driver@123` |
-| Hospital | `Hospital@123` |
-| Citizen | `Citizen@123` |
-| Police | `Police@123` |
 
 ## Environment Variables
 

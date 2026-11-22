@@ -9,19 +9,13 @@ from models import Hospital, User, Ambulance, Incident, PoliceUnit
 _GENERATED_SEED_PASSWORDS = {}
 
 def _seed_password(env_name, label):
-    defaults = {
-        'SEED_ADMIN_PASSWORD': 'Admin@123',
-        'SEED_DISPATCHER_PASSWORD': 'Dispatcher@123',
-        'SEED_DRIVER_PASSWORD': 'Driver@123',
-        'SEED_POLICE_PASSWORD': 'Police@123',
-    }
     configured = os.environ.get(env_name)
     if configured:
         return configured
-    password = defaults[env_name]
     if env_name not in _GENERATED_SEED_PASSWORDS:
+        password = secrets.token_urlsafe(12)
         _GENERATED_SEED_PASSWORDS[env_name] = password
-        print(f"{label} local demo password: {password}")
+        print(f"{label} seed password generated for this local database: {password}")
     return _GENERATED_SEED_PASSWORDS[env_name]
 
 def _seed_password_hash(env_name, label):
