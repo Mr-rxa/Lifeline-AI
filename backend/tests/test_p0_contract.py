@@ -69,7 +69,7 @@ def auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_public_registration_only_accepts_citizen():
+def test_public_registration_accepts_non_admin_roles():
     response = client.post(
         "/api/auth/register",
         json={
@@ -81,13 +81,25 @@ def test_public_registration_only_accepts_citizen():
     )
     assert response.status_code == 200
 
+    for role in ("dispatcher", "driver", "hospital", "police"):
+        response = client.post(
+            "/api/auth/register",
+            json={
+                "full_name": f"Public {role}",
+                "email": f"public-{role}@example.com",
+                "password": "secure-pass",
+                "role": role,
+            },
+        )
+        assert response.status_code == 200
+
     response = client.post(
         "/api/auth/register",
         json={
-            "full_name": "Public Dispatcher",
-            "email": "public-dispatcher@example.com",
+            "full_name": "Public Admin",
+            "email": "public-admin@example.com",
             "password": "secure-pass",
-            "role": "dispatcher",
+            "role": "admin",
         },
     )
     assert response.status_code == 400

@@ -559,6 +559,13 @@ function renderAuthScreen(mode) {
             <input type="text" id="auth-user" placeholder="Username" class="auth-input">
             <input type="email" id="auth-email" placeholder="Email" class="auth-input">
             <input type="password" id="auth-pass" placeholder="Password" class="auth-input">
+            <select id="auth-role" class="auth-input">
+                <option value="citizen">Citizen</option>
+                <option value="dispatcher">Dispatcher</option>
+                <option value="driver">Ambulance Driver</option>
+                <option value="hospital">Hospital Staff</option>
+                <option value="police">Police Officer</option>
+            </select>
         `;
         authSubmitBtn.innerText = "Register";
         authSubmitBtn.onclick = performRegister;
@@ -597,11 +604,12 @@ async function performRegister() {
     const user = document.getElementById('auth-user').value;
     const email = document.getElementById('auth-email').value;
     const pass = document.getElementById('auth-pass').value;
+    const role = document.getElementById('auth-role').value;
     
     const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({username: user, email: email, password: pass})
+        body: JSON.stringify({username: user, email: email, password: pass, role: role})
     });
     
     if(res.ok) {

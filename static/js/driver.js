@@ -38,6 +38,41 @@ async function loginDriver() {
             document.getElementById('auth-err').innerText = data.error || 'Login failed';
             document.getElementById('auth-err').style.display = 'block';
         }
+
+        function toggleDriverRegistration() {
+            const fields = document.getElementById('driver-register-fields');
+            fields.style.display = fields.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function registerDriver() {
+            const payload = {
+                username: document.getElementById('register-name').value.trim(),
+                email: document.getElementById('register-email').value.trim(),
+                password: document.getElementById('register-pass').value,
+                role: 'driver'
+            };
+            const err = document.getElementById('auth-err');
+            if(!payload.username || !payload.email || payload.password.length < 8) {
+                err.innerText = 'Name, email, and an 8-character password are required.';
+                err.style.display = 'block';
+                return;
+            }
+            const res = await fetch('/api/auth/register', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if(res.ok) {
+                err.innerText = 'Account created. Sign in with your username and password.';
+                err.style.color = 'var(--secondary-color)';
+                err.style.display = 'block';
+            } else {
+                err.innerText = data.error || 'Registration failed';
+                err.style.color = 'var(--danger-color)';
+                err.style.display = 'block';
+            }
+        }
     } catch(e) {
         document.getElementById('auth-err').innerText = 'Network error';
         document.getElementById('auth-err').style.display = 'block';

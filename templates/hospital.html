@@ -37,6 +37,13 @@
         <input type="text" id="auth-user" class="form-control" placeholder="Hospital Admin Username">
         <input type="password" id="auth-pass" class="form-control" placeholder="Password">
         <button class="btn btn-primary" onclick="loginHospital()" style="width: 100%; margin-top:15px; padding: 15px;">Login to Portal</button>
+        <div id="hospital-register-fields" style="display:none;">
+            <input type="text" id="register-name" class="form-control" placeholder="Full Name">
+            <input type="email" id="register-email" class="form-control" placeholder="Email">
+            <input type="password" id="register-pass" class="form-control" placeholder="Password (8+ characters)">
+            <button class="btn btn-secondary" onclick="registerHospital()" style="width:100%;padding:15px;">Create Hospital Account</button>
+        </div>
+        <button class="btn" onclick="toggleHospitalRegistration()" style="background:transparent;color:var(--primary-color);box-shadow:none;margin-top:8px;">Create an account</button>
         <p id="auth-err" style="color:var(--danger-color); text-align:center; margin-top:10px; display:none;"></p>
     </div>
 </div>

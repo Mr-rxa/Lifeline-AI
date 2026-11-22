@@ -51,13 +51,22 @@ def register():
 
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
     role = data.get('role', 'citizen')
-    if role not in {'citizen'}:
-        return jsonify({'error': 'Public registration is limited to citizens'}), 400
+    if role not in {'citizen', 'dispatcher', 'driver', 'hospital', 'police'}:
+        return jsonify({'error': 'Invalid public role'}), 400
+    if len(data['password']) < 8:
+        return jsonify({'error': 'Password must be at least 8 characters'}), 400
+    hospital_id = data.get('hospital_id') if role == 'hospital' else None
+    if hospital_id:
+        from models import Hospital
+        if not db.session.get(Hospital, hospital_id):
+            return jsonify({'error': 'Invalid hospital'}), 400
     new_user = User(
         username=data['username'],
         email=data['email'],
         password_hash=hashed_password,
-        role='citizen'
+        role=role,
+        status='active',
+        hospital_id=hospital_id
     )
     db.session.add(new_user)
     db.session.commit()

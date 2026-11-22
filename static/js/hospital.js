@@ -34,6 +34,41 @@ async function loginHospital() {
             err.innerText = data.error;
             err.style.display = 'block';
         }
+
+        function toggleHospitalRegistration() {
+            const fields = document.getElementById('hospital-register-fields');
+            fields.style.display = fields.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function registerHospital() {
+            const payload = {
+                username: document.getElementById('register-name').value.trim(),
+                email: document.getElementById('register-email').value.trim(),
+                password: document.getElementById('register-pass').value,
+                role: 'hospital'
+            };
+            const err = document.getElementById('auth-err');
+            if(!payload.username || !payload.email || payload.password.length < 8) {
+                err.innerText = 'Name, email, and an 8-character password are required.';
+                err.style.display = 'block';
+                return;
+            }
+            const res = await fetch('/api/auth/register', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if(res.ok) {
+                err.innerText = 'Account created. Sign in, then wait for hospital assignment.';
+                err.style.color = 'var(--secondary-color)';
+                err.style.display = 'block';
+            } else {
+                err.innerText = data.error || 'Registration failed';
+                err.style.color = 'var(--danger-color)';
+                err.style.display = 'block';
+            }
+        }
     } catch (e) {
         err.innerText = "Connection failed.";
         err.style.display = 'block';

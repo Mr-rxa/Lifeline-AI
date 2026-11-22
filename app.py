@@ -49,6 +49,10 @@ def create_app(config_class=Config):
     def hospital_mode():
         return render_template('hospital.html')
 
+    @app.route('/police')
+    def police_mode():
+        return render_template('police.html')
+
     # Create tables on startup
     with app.app_context():
         db.create_all()

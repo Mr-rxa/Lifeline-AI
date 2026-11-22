@@ -11,7 +11,7 @@ from app.services.notify import audit
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-PUBLIC_ROLES = {"citizen"}
+PUBLIC_ROLES = {"citizen", "dispatcher", "driver", "hospital", "police"}
 
 
 def _issue(db: Session, user: User) -> schemas.TokenResponse:
@@ -28,6 +28,11 @@ def register(payload: schemas.RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid role for self-registration")
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=409, detail="Email already registered")
+    hospital_id = payload.hospital_id if payload.role == "hospital" else None
+    if payload.role == "hospital" and hospital_id:
+        from app.models import Hospital
+        if not db.get(Hospital, hospital_id):
+            raise HTTPException(status_code=400, detail="Invalid hospital")
 
     user = User(
         full_name=payload.full_name,
@@ -35,7 +40,7 @@ def register(payload: schemas.RegisterRequest, db: Session = Depends(get_db)):
         phone=payload.phone,
         password_hash=hash_password(payload.password),
         role=payload.role,
-        hospital_id=payload.hospital_id if payload.role == "hospital" else None,
+        hospital_id=hospital_id,
     )
     db.add(user)
     db.commit()

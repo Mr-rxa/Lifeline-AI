@@ -61,6 +61,10 @@ Open `http://localhost:5000`.
 The common public homepage is `/`. Staff-only dispatcher access is available at
 `/dispatcher`; the landing page does not expose an admin login.
 
+The login screens for dispatcher, citizen, ambulance, hospital, and police
+users include registration. Administrator accounts can only be created through
+the protected staff management flow.
+
 The app creates `lifeline.db` and seeds demo hospitals, ambulances, users, and
 incidents on startup. On a fresh database the UI may show a first-run setup
 screen; complete it with a new admin account, then sign in.

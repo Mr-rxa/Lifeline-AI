@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LifeLine AI - Police</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        body { overflow-y: auto; }
+        .auth-overlay {
+            position: fixed; inset: 0; z-index: 100;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--bg-color); padding: 20px;
+        }
+        .auth-card { max-width: 420px; width: 100%; padding: 28px; }
+    </style>
+</head>
+<body>
+<div id="policeAuth" class="auth-overlay">
+    <div class="card auth-card">
+        <h2 style="text-align:center;">Police Response</h2>
+        <p style="text-align:center;color:#6b7280;margin:8px 0 18px;">Sign in to a police account</p>
+        <input type="text" id="auth-user" class="form-control" placeholder="Username">
+        <input type="password" id="auth-pass" class="form-control" placeholder="Password">
+        <button class="btn btn-primary" style="width:100%;" onclick="loginPolice()">Login</button>
+        <div id="police-register-fields" style="display:none;margin-top:12px;">
+            <input type="text" id="register-name" class="form-control" placeholder="Full Name">
+            <input type="email" id="register-email" class="form-control" placeholder="Email">
+            <input type="password" id="register-pass" class="form-control" placeholder="Password (8+ characters)">
+            <button class="btn btn-secondary" style="width:100%;" onclick="registerPolice()">Create Police Account</button>
+        </div>
+        <button class="btn" onclick="togglePoliceRegistration()" style="background:transparent;color:var(--primary-color);box-shadow:none;">Create an account</button>
+        <p id="auth-err" style="color:var(--danger-color);display:none;margin-top:10px;text-align:center;"></p>
+    </div>
+</div>
+<main id="policeMain" class="dashboard-content active" style="display:none;">
+    <div class="topbar"><h2>Police Operations</h2><button class="btn btn-danger" onclick="logoutPolice()">Logout</button></div>
+    <div style="padding:30px;"><div class="card"><h3>Active account</h3><p id="police-profile">Loading...</p></div></div>
+</main>
+<script src="/static/js/police.js"></script>
+</body>
+</html>

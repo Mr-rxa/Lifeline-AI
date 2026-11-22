@@ -132,6 +132,13 @@
         <input type="text" id="auth-user" class="form-control" placeholder="Driver Username">
         <input type="password" id="auth-pass" class="form-control" placeholder="Password">
         <button class="btn btn-primary btn-large" onclick="loginDriver()" style="margin-top:15px;">Login to Terminal</button>
+        <div id="driver-register-fields" style="display:none;">
+            <input type="text" id="register-name" class="form-control" placeholder="Full Name">
+            <input type="email" id="register-email" class="form-control" placeholder="Email">
+            <input type="password" id="register-pass" class="form-control" placeholder="Password (8+ characters)">
+            <button class="btn btn-secondary btn-large" onclick="registerDriver()">Create Driver Account</button>
+        </div>
+        <button class="btn" onclick="toggleDriverRegistration()" style="background:transparent;color:var(--primary-color);box-shadow:none;">Create an account</button>
         <p id="auth-err" style="color:var(--danger-color); text-align:center; margin-top:10px; display:none;"></p>
     </div>
 </div>
