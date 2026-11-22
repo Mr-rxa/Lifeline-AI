@@ -74,18 +74,25 @@ _GENERATED_SEED_PASSWORDS = {}
 
 
 def seed_password(env_name):
+    defaults = {
+        "SEED_ADMIN_PASSWORD": "Admin@123",
+        "SEED_DISPATCHER_PASSWORD": "Dispatcher@123",
+        "SEED_DRIVER_PASSWORD": "Driver@123",
+        "SEED_HOSPITAL_PASSWORD": "Hospital@123",
+        "SEED_CITIZEN_PASSWORD": "Citizen@123",
+    }
     value = getattr(settings, env_name, "")
     if value:
         return value
     if env_name not in _GENERATED_SEED_PASSWORDS:
-        _GENERATED_SEED_PASSWORDS[env_name] = secrets.token_urlsafe(12)
+        _GENERATED_SEED_PASSWORDS[env_name] = defaults[env_name]
     return _GENERATED_SEED_PASSWORDS[env_name]
 
 
 def password_note(env_name):
     if getattr(settings, env_name, ""):
         return f"configured via {env_name}"
-    return f"generated for this seed run: {_GENERATED_SEED_PASSWORDS[env_name]}"
+    return f"default local demo password: {_GENERATED_SEED_PASSWORDS[env_name]}"
 
 
 def rand_point(spread=0.06):

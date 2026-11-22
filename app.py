@@ -31,6 +31,10 @@ def create_app(config_class=Config):
     # Serve the main Single Page Application
     @app.route('/')
     def index():
+        return render_template('home.html')
+
+    @app.route('/dispatcher')
+    def dispatcher_mode():
         return render_template('index.html')
         
     @app.route('/driver')
