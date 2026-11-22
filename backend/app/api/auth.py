@@ -11,7 +11,7 @@ from app.services.notify import audit
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-PUBLIC_ROLES = {"citizen", "dispatcher", "driver", "hospital"}
+PUBLIC_ROLES = {"citizen"}
 
 
 def _issue(db: Session, user: User) -> schemas.TokenResponse:

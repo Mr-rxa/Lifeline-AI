@@ -31,7 +31,12 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="LifeLine AI", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="LifeLine AI",
+    version="1.0.0",
+    lifespan=lifespan,
+    root_path_in_servers=False,
+)
 
 origins = ["*"] if settings.CORS_ORIGINS == "*" else [o.strip() for o in settings.CORS_ORIGINS.split(",")]
 app.add_middleware(

@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: lifeline
+      POSTGRES_USER: lifeline
+      POSTGRES_PASSWORD: lifeline
+    volumes:
+      - lifeline-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lifeline -d lifeline"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql://lifeline:lifeline@db:5432/lifeline
+      JWT_SECRET: change-this-in-production
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+volumes:
+  lifeline-postgres:

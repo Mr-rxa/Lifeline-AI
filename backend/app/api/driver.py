@@ -24,7 +24,7 @@ def driver_state(db: Session = Depends(get_db), user: User = Depends(require_rol
     amb = db.query(Ambulance).filter(Ambulance.driver_id == user.id).first()
     incident = None
     if amb and amb.current_incident_id:
-        inc = db.get(Incident, amb.current_incident_id)
+        inc = db.query(Incident).filter(Incident.id == amb.current_incident_id).with_for_update().first()
         if inc:
             incident = schemas.IncidentDetail.model_validate(inc).model_dump(mode="json")
     return {
@@ -100,7 +100,7 @@ def accept_assignment(db: Session = Depends(get_db), user: User = Depends(requir
     amb = _my_ambulance(db, user)
     if not amb.current_incident_id:
         raise HTTPException(status_code=400, detail="No assignment to accept")
-    inc = db.get(Incident, amb.current_incident_id)
+    inc = db.query(Incident).filter(Incident.id == amb.current_incident_id).with_for_update().first()
     if not inc or inc.status != "assigned":
         raise HTTPException(status_code=400, detail="No pending assignment")
     lifecycle.accept(db, inc, amb)
@@ -112,7 +112,7 @@ def reject_assignment(db: Session = Depends(get_db), user: User = Depends(requir
     amb = _my_ambulance(db, user)
     if not amb.current_incident_id:
         raise HTTPException(status_code=400, detail="No assignment to reject")
-    inc = db.get(Incident, amb.current_incident_id)
+    inc = db.query(Incident).filter(Incident.id == amb.current_incident_id).with_for_update().first()
     if not inc or inc.status != "assigned":
         raise HTTPException(status_code=400, detail="Assignment already accepted or closed")
     lifecycle.reject(db, inc, amb)
