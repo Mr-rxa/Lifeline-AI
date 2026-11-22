@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from app import schemas
@@ -11,13 +11,13 @@ from app.services.notify import audit
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
-ALL_ROLES = {"citizen", "dispatcher", "driver", "hospital", "admin"}
+ALL_ROLES = {"citizen", "dispatcher", "driver", "hospital", "police", "admin"}
 
 
 class AdminCreateUser(BaseModel):
     full_name: str
     email: EmailStr
-    password: str
+    password: str = Field(min_length=8)
     phone: str = ""
     role: str
     hospital_id: int | None = None

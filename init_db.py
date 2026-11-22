@@ -4,7 +4,7 @@ import random
 import secrets
 from datetime import datetime, timedelta
 from extensions import db, bcrypt
-from models import Hospital, User, Ambulance, Incident
+from models import Hospital, User, Ambulance, Incident, PoliceUnit
 
 _GENERATED_SEED_PASSWORDS = {}
 
@@ -12,12 +12,10 @@ def _seed_password(env_name, label):
     configured = os.environ.get(env_name)
     if configured:
         return configured
-
     if env_name not in _GENERATED_SEED_PASSWORDS:
         password = secrets.token_urlsafe(12)
         _GENERATED_SEED_PASSWORDS[env_name] = password
         print(f"{label} seed password generated for this local database: {password}")
-
     return _GENERATED_SEED_PASSWORDS[env_name]
 
 def _seed_password_hash(env_name, label):
@@ -89,6 +87,24 @@ def init_fleet_and_demo_data():
             last_update=datetime.utcnow()
         )
         db.session.add(amb)
+
+    for i in range(1, 4):
+        officer = User(
+            username=f'police{i}',
+            email=f'police{i}@lifeline.ai',
+            password_hash=_seed_password_hash('SEED_POLICE_PASSWORD', 'Police'),
+            role='police'
+        )
+        db.session.add(officer)
+        db.session.flush()
+        hosp = random.choice(hospitals)
+        db.session.add(PoliceUnit(
+            unit_number=f'POL-{100+i}',
+            station_name=f'Police Station {i}',
+            type='Patrol',
+            status='available',
+            officer_id=officer.id,
+        ))
         
     # Seed 20 Historical Incidents for Analytics
     for i in range(1, 21):

@@ -39,11 +39,16 @@ def create_user():
         return jsonify({'error': 'User already exists'}), 400
 
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
+    role = data.get('role', 'dispatcher')
+    if role not in {'admin', 'dispatcher', 'driver', 'hospital', 'police', 'citizen'}:
+        return jsonify({'error': 'Invalid role'}), 400
+    if len(data['password']) < 8:
+        return jsonify({'error': 'Password must be at least 8 characters'}), 400
     new_user = User(
         username=data['username'],
         email=data['email'],
         password_hash=hashed_password,
-        role=data.get('role', 'dispatcher'),
+        role=role,
         status=data.get('status', 'active')
     )
     db.session.add(new_user)

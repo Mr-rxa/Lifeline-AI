@@ -163,7 +163,7 @@ def incident_route(incident_id: int, db: Session = Depends(get_db), user: User =
 
 @router.post("/{incident_id}/cancel", response_model=schemas.IncidentDetail)
 def cancel_incident(incident_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    inc = db.get(Incident, incident_id)
+    inc = db.query(Incident).filter(Incident.id == incident_id).with_for_update().first()
     if not inc:
         raise HTTPException(status_code=404, detail="Incident not found")
     if user.role not in DISPATCH_ROLES and not (user.role == "citizen" and inc.citizen_id == user.id):

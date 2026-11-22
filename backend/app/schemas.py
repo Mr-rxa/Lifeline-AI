@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 class RegisterRequest(BaseModel):
     full_name: str
     email: EmailStr
-    password: str = Field(min_length=4)
+    password: str = Field(min_length=8)
     phone: str = ""
     role: str = "citizen"  # citizen/dispatcher/driver/hospital (admin only created by admin)
     hospital_id: int | None = None
@@ -115,8 +115,8 @@ class AmbulanceCreate(BaseModel):
 
 
 class LocationUpdate(BaseModel):
-    lat: float
-    lon: float
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
     speed: float = 0.0
 
 
@@ -126,8 +126,8 @@ class IncidentCreate(BaseModel):
     patient_phone: str = ""
     emergency_type: str = "medical"
     description: str = ""
-    pickup_lat: float
-    pickup_lon: float
+    pickup_lat: float = Field(ge=-90, le=90)
+    pickup_lon: float = Field(ge=-180, le=180)
     pickup_address: str = ""
 
 

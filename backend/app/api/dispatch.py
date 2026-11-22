@@ -19,9 +19,15 @@ DISPATCH_ROLES = (ROLE_ADMIN, ROLE_DISPATCHER)
 
 def _pick_hospital(db: Session, inc: Incident, hospital_id: int | None) -> Hospital | None:
     if hospital_id:
-        h = db.get(Hospital, hospital_id)
+        h = db.query(Hospital).filter(Hospital.id == hospital_id).with_for_update().first()
         if not h:
             raise HTTPException(status_code=404, detail="Hospital not found")
+        if not h.accepting:
+            raise HTTPException(status_code=409, detail="Hospital is not accepting patients")
+        if inc.severity == "critical" and h.available_icu_beds <= 0:
+            raise HTTPException(status_code=409, detail="Hospital has no ICU beds available")
+        if inc.severity != "critical" and h.available_beds <= 0:
+            raise HTTPException(status_code=409, detail="Hospital has no beds available")
         return h
     recs = recommend_hospitals(db, inc.pickup_lat, inc.pickup_lon, inc.severity, limit=1)
     return recs[0]["hospital"] if recs else None
@@ -41,13 +47,13 @@ def assign(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(*DISPATCH_ROLES)),
 ):
-    inc = db.get(Incident, incident_id)
+    inc = db.query(Incident).filter(Incident.id == incident_id).with_for_update().first()
     if not inc:
         raise HTTPException(status_code=404, detail="Incident not found")
     if inc.status not in ("pending",):
         raise HTTPException(status_code=400, detail=f"Incident is {inc.status}, not assignable")
 
-    amb = db.get(Ambulance, payload.ambulance_id)
+    amb = db.query(Ambulance).filter(Ambulance.id == payload.ambulance_id).with_for_update().first()
     if not amb:
         raise HTTPException(status_code=404, detail="Ambulance not found")
     if amb.status != "available" or not amb.on_shift:
@@ -68,13 +74,13 @@ def reassign(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(*DISPATCH_ROLES)),
 ):
-    inc = db.get(Incident, incident_id)
+    inc = db.query(Incident).filter(Incident.id == incident_id).with_for_update().first()
     if not inc:
         raise HTTPException(status_code=404, detail="Incident not found")
     if inc.status in ("completed", "cancelled"):
         raise HTTPException(status_code=400, detail="Incident already closed")
 
-    new_amb = db.get(Ambulance, payload.ambulance_id)
+    new_amb = db.query(Ambulance).filter(Ambulance.id == payload.ambulance_id).with_for_update().first()
     if not new_amb:
         raise HTTPException(status_code=404, detail="Ambulance not found")
     if new_amb.id == inc.assigned_ambulance_id:

@@ -32,8 +32,9 @@ class Settings(BaseSettings):
     SEED_DRIVER_PASSWORD: str = ""
     SEED_HOSPITAL_PASSWORD: str = ""
     SEED_CITIZEN_PASSWORD: str = ""
+    SEED_POLICE_PASSWORD: str = ""
 
-    CORS_ORIGINS: str = "*"
+    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000"
 
 
 settings = Settings()

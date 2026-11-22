@@ -25,10 +25,22 @@ def add_ambulance():
     data = request.get_json()
     if not data or not data.get('vehicle_number'):
         return jsonify({'error': 'Missing vehicle number'}), 400
+    if Ambulance.query.filter_by(vehicle_number=data['vehicle_number']).first():
+        return jsonify({'error': 'Vehicle number already exists'}), 409
+    type_name = data.get('type', 'ALS')
+    if type_name not in {'ALS', 'BLS'}:
+        return jsonify({'error': 'Invalid ambulance type'}), 400
+    driver_id = data.get('driver_id')
+    if driver_id:
+        driver = db.session.get(User, driver_id)
+        if not driver or driver.role != 'driver':
+            return jsonify({'error': 'Invalid driver'}), 400
         
     amb = Ambulance(
         vehicle_number=data['vehicle_number'],
-        type=data.get('type', 'ALS')
+        type=type_name,
+        driver_id=driver_id,
+        status='available'
     )
     db.session.add(amb)
     db.session.commit()

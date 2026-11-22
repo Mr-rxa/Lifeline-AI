@@ -393,6 +393,98 @@ function showNewAmbulanceModal() {
     if(vnum) {
         submitAmbulance(vnum);
     }
+
+    function showNewHospitalModal() {
+        document.getElementById('newHospitalModal').style.display = 'block';
+    }
+
+    async function submitHospital() {
+        const payload = {
+            name: document.getElementById('new-hosp-name').value.trim(),
+            address: document.getElementById('new-hosp-address').value.trim(),
+            lat: parseFloat(document.getElementById('new-hosp-lat').value),
+            lon: parseFloat(document.getElementById('new-hosp-lon').value),
+            total_beds: parseInt(document.getElementById('new-hosp-beds').value || '0'),
+            available_beds: parseInt(document.getElementById('new-hosp-beds').value || '0'),
+            total_icu_beds: parseInt(document.getElementById('new-hosp-icu').value || '0'),
+            available_icu_beds: parseInt(document.getElementById('new-hosp-icu').value || '0')
+        };
+        if(!payload.name || Number.isNaN(payload.lat) || Number.isNaN(payload.lon)) {
+            alert('Hospital name and coordinates are required.');
+            return;
+        }
+        const res = await fetch('/api/hospitals/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+            body: JSON.stringify(payload)
+        });
+        if(res.ok) {
+            document.getElementById('newHospitalModal').style.display = 'none';
+            fetchHospitals();
+            fetchSummary();
+        } else {
+            const data = await res.json();
+            alert(data.error || data.detail || 'Failed to register hospital');
+        }
+    }
+
+    function showNewUserModal() {
+        document.getElementById('newUserModal').style.display = 'block';
+    }
+
+    function showNewPoliceUnitModal() {
+        document.getElementById('newPoliceUnitModal').style.display = 'block';
+    }
+
+    async function submitPoliceUnit() {
+        const payload = {
+            unit_number: document.getElementById('new-police-number').value.trim(),
+            station_name: document.getElementById('new-police-station').value.trim(),
+            type: document.getElementById('new-police-type').value
+        };
+        if(!payload.unit_number) {
+            alert('Unit number is required.');
+            return;
+        }
+        const res = await fetch('/api/police/units', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+            body: JSON.stringify(payload)
+        });
+        if(res.ok) {
+            document.getElementById('newPoliceUnitModal').style.display = 'none';
+            window.showToast('Police unit registered', 'success');
+        } else {
+            const data = await res.json();
+            alert(data.detail || data.error || 'Failed to register police unit');
+        }
+    }
+
+    async function submitUser() {
+        const payload = {
+            full_name: document.getElementById('new-user-name').value.trim(),
+            username: document.getElementById('new-user-name').value.trim(),
+            email: document.getElementById('new-user-email').value.trim(),
+            password: document.getElementById('new-user-password').value,
+            role: document.getElementById('new-user-role').value
+        };
+        if(!payload.full_name || !payload.email || payload.password.length < 8) {
+            alert('Name, email, and an 8-character password are required.');
+            return;
+        }
+        const res = await fetch('/api/users', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+            body: JSON.stringify(payload)
+        });
+        if(res.ok) {
+            document.getElementById('newUserModal').style.display = 'none';
+            fetchUsers();
+        } else {
+            const data = await res.json();
+            alert(data.detail || data.error || 'Failed to register user');
+        }
+    }
 }
 
 async function submitAmbulance(vehicle_number) {
@@ -467,6 +559,13 @@ function renderAuthScreen(mode) {
             <input type="text" id="auth-user" placeholder="Username" class="auth-input">
             <input type="email" id="auth-email" placeholder="Email" class="auth-input">
             <input type="password" id="auth-pass" placeholder="Password" class="auth-input">
+            <select id="auth-role" class="auth-input">
+                <option value="citizen">Citizen</option>
+                <option value="dispatcher">Dispatcher</option>
+                <option value="driver">Ambulance Driver</option>
+                <option value="hospital">Hospital Staff</option>
+                <option value="police">Police Officer</option>
+            </select>
         `;
         authSubmitBtn.innerText = "Register";
         authSubmitBtn.onclick = performRegister;
@@ -505,11 +604,12 @@ async function performRegister() {
     const user = document.getElementById('auth-user').value;
     const email = document.getElementById('auth-email').value;
     const pass = document.getElementById('auth-pass').value;
+    const role = document.getElementById('auth-role').value;
     
     const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({username: user, email: email, password: pass})
+        body: JSON.stringify({username: user, email: email, password: pass, role: role})
     });
     
     if(res.ok) {
@@ -625,6 +725,9 @@ async function fetchUsers() {
                             <option value="admin" ${u.role==='admin'?'selected':''}>Admin</option>
                             <option value="dispatcher" ${u.role==='dispatcher'?'selected':''}>Dispatcher</option>
                             <option value="driver" ${u.role==='driver'?'selected':''}>Driver</option>
+                            <option value="hospital" ${u.role==='hospital'?'selected':''}>Hospital Staff</option>
+                            <option value="police" ${u.role==='police'?'selected':''}>Police Officer</option>
+                            <option value="citizen" ${u.role==='citizen'?'selected':''}>Citizen</option>
                         </select>
                     </td>
                     <td>

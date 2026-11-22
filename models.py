@@ -82,3 +82,11 @@ class TrackingLog(db.Model):
     lon = db.Column(db.Float, nullable=False)
     speed = db.Column(db.Float, default=0.0)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+class PoliceUnit(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    unit_number = db.Column(db.String(30), unique=True, nullable=False)
+    station_name = db.Column(db.String(150), default='')
+    type = db.Column(db.String(20), default='Patrol')
+    status = db.Column(db.String(20), default='available')
+    officer_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)

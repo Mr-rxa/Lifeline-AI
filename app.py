@@ -31,6 +31,10 @@ def create_app(config_class=Config):
     # Serve the main Single Page Application
     @app.route('/')
     def index():
+        return render_template('home.html')
+
+    @app.route('/dispatcher')
+    def dispatcher_mode():
         return render_template('index.html')
         
     @app.route('/driver')
@@ -44,6 +48,10 @@ def create_app(config_class=Config):
     @app.route('/hospital')
     def hospital_mode():
         return render_template('hospital.html')
+
+    @app.route('/police')
+    def police_mode():
+        return render_template('police.html')
 
     # Create tables on startup
     with app.app_context():

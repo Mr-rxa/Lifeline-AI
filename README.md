@@ -58,6 +58,13 @@ python app.py
 
 Open `http://localhost:5000`.
 
+The common public homepage is `/`. Staff-only dispatcher access is available at
+`/dispatcher`; the landing page does not expose an admin login.
+
+The login screens for dispatcher, citizen, ambulance, hospital, and police
+users include registration. Administrator accounts can only be created through
+the protected staff management flow.
+
 The app creates `lifeline.db` and seeds demo hospitals, ambulances, users, and
 incidents on startup. On a fresh database the UI may show a first-run setup
 screen; complete it with a new admin account, then sign in.
@@ -109,6 +116,7 @@ Seeded demo identifiers:
 | Driver | `driver1@lifeline.ai` |
 | Hospital | `hospital1@lifeline.ai` |
 | Citizen | `citizen@lifeline.ai` |
+| Police | `police1@lifeline.ai` |
 
 ## Environment Variables
 
@@ -188,3 +196,28 @@ adjustments on Windows.
   production.
 - Use a managed database URL for persistent deployments instead of the default
   local SQLite files.
+
+## Canonical Backend and Local Operations
+
+FastAPI is the canonical API and should be used for new integrations. The Flask
+application remains present for legacy demos and should not be treated as the
+production contract.
+
+The FastAPI backend supports:
+
+- PostgreSQL through `DATABASE_URL`
+- Redis as a future cache/broker service
+- Docker Compose for local development
+- Alembic migrations for schema changes
+
+Run the complete local stack:
+
+```powershell
+docker compose up --build
+```
+
+Apply database migrations inside the API container:
+
+```powershell
+docker compose run --rm api alembic upgrade head
+```
