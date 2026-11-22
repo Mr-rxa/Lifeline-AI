@@ -50,11 +50,14 @@ def register():
         return jsonify({'error': 'User already exists'}), 400
 
     hashed_password = bcrypt.generate_password_hash(data['password']).decode('utf-8')
+    role = data.get('role', 'citizen')
+    if role not in {'citizen'}:
+        return jsonify({'error': 'Public registration is limited to citizens'}), 400
     new_user = User(
         username=data['username'],
         email=data['email'],
         password_hash=hashed_password,
-        role=data.get('role', 'dispatcher')
+        role='citizen'
     )
     db.session.add(new_user)
     db.session.commit()

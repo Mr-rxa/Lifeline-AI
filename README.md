@@ -121,6 +121,7 @@ Seeded demo identifiers:
 | Driver | `driver1@lifeline.ai` |
 | Hospital | `hospital1@lifeline.ai` |
 | Citizen | `citizen@lifeline.ai` |
+| Police | `police1@lifeline.ai` |
 
 Demo passwords:
 
@@ -131,6 +132,7 @@ Demo passwords:
 | Driver | `Driver@123` |
 | Hospital | `Hospital@123` |
 | Citizen | `Citizen@123` |
+| Police | `Police@123` |
 
 ## Environment Variables
 

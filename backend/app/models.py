@@ -23,6 +23,7 @@ ROLE_CITIZEN = "citizen"
 ROLE_DISPATCHER = "dispatcher"
 ROLE_DRIVER = "driver"
 ROLE_HOSPITAL = "hospital"
+ROLE_POLICE = "police"
 ROLE_ADMIN = "admin"
 
 
@@ -99,6 +100,22 @@ class Ambulance(Base):
     last_update: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     driver = relationship("User", foreign_keys=[driver_id])
+
+
+class PoliceUnit(Base):
+    __tablename__ = "police_units"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    unit_number: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    station_name: Mapped[str] = mapped_column(String(160), default="")
+    type: Mapped[str] = mapped_column(String(20), default="Patrol")
+    status: Mapped[str] = mapped_column(String(20), default="available")
+    officer_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    last_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_update: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    officer = relationship("User", foreign_keys=[officer_id])
 
 
 class Incident(Base):

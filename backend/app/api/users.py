@@ -11,7 +11,7 @@ from app.services.notify import audit
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
-ALL_ROLES = {"citizen", "dispatcher", "driver", "hospital", "admin"}
+ALL_ROLES = {"citizen", "dispatcher", "driver", "hospital", "police", "admin"}
 
 
 class AdminCreateUser(BaseModel):

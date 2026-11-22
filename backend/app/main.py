@@ -14,6 +14,7 @@ from app.api import (
     hospitals,
     incidents,
     notifications,
+    police,
     tracking,
     users,
 )
@@ -58,6 +59,7 @@ for r in (
     tracking.router,
     analytics.router,
     notifications.router,
+    police.router,
     admin.router,
 ):
     app.include_router(r)

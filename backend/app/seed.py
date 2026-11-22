@@ -18,6 +18,7 @@ from app.models import (
     AuditLog,
     Hospital,
     Incident,
+    PoliceUnit,
     Resource,
     User,
     utcnow,
@@ -80,6 +81,7 @@ def seed_password(env_name):
         "SEED_DRIVER_PASSWORD": "Driver@123",
         "SEED_HOSPITAL_PASSWORD": "Hospital@123",
         "SEED_CITIZEN_PASSWORD": "Citizen@123",
+        "SEED_POLICE_PASSWORD": "Police@123",
     }
     value = getattr(settings, env_name, "")
     if value:
@@ -182,6 +184,28 @@ def run():
             )
             db.add(amb)
             ambulances.append(amb)
+        police_password = seed_password("SEED_POLICE_PASSWORD")
+        for i in range(3):
+            officer = User(
+                full_name=f"Police Officer {i + 1}",
+                email=f"police{i + 1}@lifeline.ai",
+                phone=f"+91-983300000{i}",
+                password_hash=hash_password(police_password),
+                role="police",
+            )
+            db.add(officer)
+            db.flush()
+            lat, lon = rand_point()
+            db.add(PoliceUnit(
+                unit_number=f"POL-{100 + i}",
+                station_name=f"Police Station {i + 1}",
+                type="Patrol",
+                status="available",
+                officer_id=officer.id,
+                last_lat=lat,
+                last_lon=lon,
+                last_update=utcnow(),
+            ))
         db.commit()
 
         # ---- Historical incidents (last 14 days, completed) for analytics ----
@@ -239,6 +263,7 @@ def run():
         print(f"  Driver      driver1@lifeline.ai / {password_note('SEED_DRIVER_PASSWORD')}")
         print(f"  Hospital    hospital1@lifeline.ai / {password_note('SEED_HOSPITAL_PASSWORD')}")
         print(f"  Citizen     citizen@lifeline.ai / {password_note('SEED_CITIZEN_PASSWORD')}")
+        print(f"  Police      police1@lifeline.ai / {password_note('SEED_POLICE_PASSWORD')}")
     finally:
         db.close()
 

@@ -128,7 +128,10 @@
 
         <!-- Hospitals List -->
         <section id="hospitals" class="dashboard-content">
-            <h2>Hospital Resource Management</h2>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h2>Hospital Resource Management</h2>
+                <button class="btn btn-primary" onclick="showNewHospitalModal()">+ Register Hospital</button>
+            </div>
             <div class="table-container" style="margin-top:20px;">
                 <table id="hospitalsTable">
                     <thead>
@@ -147,7 +150,10 @@
         <section id="fleet" class="dashboard-content">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                 <h2>Fleet Management</h2>
-                <button class="btn btn-primary" onclick="showNewAmbulanceModal()">+ Register Ambulance</button>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-primary" onclick="showNewPoliceUnitModal()">+ Register Police Unit</button>
+                    <button class="btn btn-primary" onclick="showNewAmbulanceModal()">+ Register Ambulance</button>
+                </div>
             </div>
             <div class="table-container">
                 <table id="fleetTable">
@@ -165,7 +171,10 @@
 
         <!-- Admin Panel -->
         <section id="admin-panel" class="dashboard-content">
-            <h2>User Management</h2>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h2>User and Service Registration</h2>
+                <button class="btn btn-primary" onclick="showNewUserModal()">+ Register User</button>
+            </div>
             <div class="table-container" style="margin-top:20px;">
                 <table>
                     <thead>
@@ -223,6 +232,59 @@
             <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:20px;">
                 <button class="btn btn-danger" onclick="document.getElementById('editHospitalModal').style.display='none'">Cancel</button>
                 <button class="btn btn-primary" onclick="submitHospitalUpdate()">Update</button>
+            </div>
+
+            <div id="newHospitalModal" class="glass-panel" style="position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:460px; padding:30px; z-index:9999; display:none;">
+                <h2>Register Hospital</h2>
+                <input type="text" id="new-hosp-name" class="form-control" placeholder="Hospital name">
+                <input type="text" id="new-hosp-address" class="form-control" placeholder="Address">
+                <div style="display:flex; gap:10px;">
+                    <input type="number" id="new-hosp-lat" class="form-control" placeholder="Latitude" step="0.000001">
+                    <input type="number" id="new-hosp-lon" class="form-control" placeholder="Longitude" step="0.000001">
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <input type="number" id="new-hosp-beds" class="form-control" placeholder="Total beds" min="0">
+                    <input type="number" id="new-hosp-icu" class="form-control" placeholder="Total ICU" min="0">
+                </div>
+                <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:15px;">
+                    <button class="btn btn-danger" onclick="document.getElementById('newHospitalModal').style.display='none'">Cancel</button>
+                    <button class="btn btn-primary" onclick="submitHospital()">Register</button>
+                </div>
+            </div>
+
+            <div id="newUserModal" class="glass-panel" style="position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:460px; padding:30px; z-index:9999; display:none;">
+                <h2>Register Staff or Service</h2>
+                <input type="text" id="new-user-name" class="form-control" placeholder="Full name / username">
+                <input type="email" id="new-user-email" class="form-control" placeholder="Email">
+                <input type="password" id="new-user-password" class="form-control" placeholder="Temporary password (8+ characters)">
+                <select id="new-user-role" class="form-control">
+                    <option value="dispatcher">Dispatcher</option>
+                    <option value="driver">Ambulance Driver</option>
+                    <option value="hospital">Hospital Staff</option>
+                    <option value="police">Police Officer</option>
+                    <option value="citizen">Citizen</option>
+                    <option value="admin">Administrator</option>
+                </select>
+                <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:15px;">
+                    <button class="btn btn-danger" onclick="document.getElementById('newUserModal').style.display='none'">Cancel</button>
+                    <button class="btn btn-primary" onclick="submitUser()">Register</button>
+                </div>
+
+                <div id="newPoliceUnitModal" class="glass-panel" style="position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); width:460px; padding:30px; z-index:9999; display:none;">
+                    <h2>Register Police Unit</h2>
+                    <input type="text" id="new-police-number" class="form-control" placeholder="Unit number (for example POL-101)">
+                    <input type="text" id="new-police-station" class="form-control" placeholder="Station name">
+                    <select id="new-police-type" class="form-control">
+                        <option value="Patrol">Patrol</option>
+                        <option value="Traffic">Traffic</option>
+                        <option value="Emergency">Emergency</option>
+                        <option value="Rescue">Rescue</option>
+                    </select>
+                    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:15px;">
+                        <button class="btn btn-danger" onclick="document.getElementById('newPoliceUnitModal').style.display='none'">Cancel</button>
+                        <button class="btn btn-primary" onclick="submitPoliceUnit()">Register</button>
+                    </div>
+                </div>
             </div>
         </div>
 
